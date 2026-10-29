@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "type": "list",
+    "description": "规则列表，每行一条：关键词=>回复内容（回复支持内联标记，如 [face:doge]）",
+    "default": ["早安=>早上好呀[face:太阳]", "晚安=>晚安，好梦[face:月亮]"]
+  },
+  "exact": { "type": "bool", "description": "整句完全匹配（否则包含即触发）", "default": false },
+  "cooldownSec": { "type": "int", "description": "同一会话同一关键词冷却秒数", "default": 30 },
+  "groupsOnly": { "type": "bool", "description": "仅群聊生效", "default": false }
+}

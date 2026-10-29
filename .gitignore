@@ -1,0 +1,6 @@
+node_modules/
+data/
+config/qab.yaml
+console/node_modules/
+console/dist/
+*.log

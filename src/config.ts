@@ -1,0 +1,154 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
+import { z } from 'zod';
+import { atomicWrite, randomToken } from './util/fs.ts';
+
+export const TIERS = ['read', 'send', 'manage', 'danger'] as const;
+export type Tier = (typeof TIERS)[number];
+
+const idList = z.array(z.union([z.string(), z.number()]).transform(String)).default([]);
+
+const AgentTokenSchema = z.object({
+  name: z.string(),
+  token: z.string(),
+  /** 允许的权限等级 */
+  tiers: z.array(z.enum(TIERS)).default(['read', 'send']),
+  /** 允许操作的会话；空 = 跟随全局 access 设置 */
+  groups: idList,
+  private: idList,
+  enabled: z.boolean().default(true),
+});
+export type AgentToken = z.infer<typeof AgentTokenSchema>;
+
+export const ConfigSchema = z.object({
+  onebot: z.object({
+    wsUrl: z.string().default('ws://127.0.0.1:3001'),
+    httpUrl: z.string().default('http://127.0.0.1:3000'),
+    /** WS token（SnowLuma 中 WS 与 HTTP token 可能不同） */
+    accessToken: z.string().default(''),
+    httpToken: z.string().default(''),
+    /** SnowLuma 安装目录：用于自动读取 config/onebot_<uin>.json 的端口与 token */
+    snowlumaHome: z.string().default(''),
+    autoDiscover: z.boolean().default(true),
+    actionTimeoutMs: z.number().default(30000),
+    reconnectMaxMs: z.number().default(30000),
+  }).prefault({}),
+  server: z.object({
+    host: z.string().default('127.0.0.1'),
+    port: z.number().default(3210),
+    /** 控制台登录密码；为空时首次访问进入设置向导 */
+    consolePassword: z.string().default(''),
+    sessionSecret: z.string().default(''),
+  }).prefault({}),
+  /** 主人 QQ：插件 owner 权限、审批通知 */
+  owners: idList,
+  access: z.object({
+    /** allowlist：只处理白名单会话；all：处理全部（黑名单除外） */
+    mode: z.enum(['allowlist', 'all']).default('all'),
+    groups: idList,
+    private: idList,
+    denyGroups: idList,
+    denyPrivate: idList,
+    /** 全局只读：禁止一切非 read 级动作 */
+    readOnly: z.boolean().default(false),
+  }).prefault({}),
+  limits: z.object({
+    sendPerMinute: z.number().default(20),
+    sendPerHour: z.number().default(300),
+    convPerMinute: z.number().default(8),
+    maxMessageChars: z.number().default(3000),
+    /** 分条发送时的条间节奏：base + perChar*字数，封顶 max */
+    gapBaseMs: z.number().default(800),
+    gapPerCharMs: z.number().default(25),
+    gapMaxMs: z.number().default(6000),
+  }).prefault({}),
+  agents: z.object({
+    tokens: z.array(AgentTokenSchema).default([]),
+    /** 各等级默认处理：allow 放行 / approve 需控制台审批 / deny 拒绝 */
+    policy: z.object({
+      read: z.enum(['allow', 'approve', 'deny']).default('allow'),
+      send: z.enum(['allow', 'approve', 'deny']).default('allow'),
+      manage: z.enum(['allow', 'approve', 'deny']).default('allow'),
+      danger: z.enum(['allow', 'approve', 'deny']).default('approve'),
+    }).prefault({}),
+    approvalTimeoutMs: z.number().default(10 * 60 * 1000),
+    /** 不注册到 MCP 的工具名 */
+    disabledTools: z.array(z.string()).default([]),
+  }).prefault({}),
+  media: z.object({
+    maxDownloadBytes: z.number().default(30 * 1024 * 1024),
+    /** 返回给模型的图片最大字节数，超过则只给链接/路径 */
+    maxInlineImageBytes: z.number().default(3 * 1024 * 1024),
+    /** agent 发送本地文件时允许读取的目录（空 = 不限制） */
+    uploadRoots: z.array(z.string()).default([]),
+  }).prefault({}),
+  plugins: z.object({
+    dir: z.string().default('plugins'),
+    disabled: z.array(z.string()).default([]),
+    /** 命令前缀 */
+    commandPrefixes: z.array(z.string()).default(['/', '#']),
+    astrbot: z.object({
+      enabled: z.boolean().default(false),
+      python: z.string().default('python'),
+      dir: z.string().default('astrbot_plugins'),
+    }).prefault({}),
+  }).prefault({}),
+  dataDir: z.string().default('data'),
+});
+export type Config = z.infer<typeof ConfigSchema>;
+
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const CONFIG_PATH = process.env.QAB_CONFIG || path.join(ROOT, 'config', 'qab.yaml');
+
+export function resolveFromRoot(p: string) {
+  return path.isAbsolute(p) ? p : path.join(ROOT, p);
+}
+
+export function loadConfig(file = CONFIG_PATH): { config: Config; created: boolean } {
+  let raw: unknown = {};
+  let created = false;
+  if (fs.existsSync(file)) {
+    raw = YAML.parse(fs.readFileSync(file, 'utf8')) ?? {};
+  } else {
+    created = true;
+  }
+  const config = ConfigSchema.parse(raw);
+  let dirty = created;
+  if (!config.server.sessionSecret) { config.server.sessionSecret = randomToken(32); dirty = true; }
+  if (config.agents.tokens.length === 0) {
+    config.agents.tokens.push({ name: 'default', token: `qab_${randomToken(24)}`, tiers: ['read', 'send', 'manage', 'danger'], groups: [], private: [], enabled: true });
+    dirty = true;
+  }
+  if (!config.onebot.snowlumaHome) {
+    const guess = guessSnowLumaHome();
+    if (guess) { config.onebot.snowlumaHome = guess; dirty = true; }
+  }
+  if (dirty) saveConfig(config, file);
+  return { config, created };
+}
+
+export function saveConfig(config: Config, file = CONFIG_PATH) {
+  const doc = new YAML.Document(config);
+  doc.commentBefore = ' QQ-Agent Bridge 配置。可在 Web 控制台「设置」页修改，保存后多数项即时生效。';
+  atomicWrite(file, doc.toString({ lineWidth: 0 }));
+}
+
+/** 在常见位置寻找 SnowLuma 安装目录（含 config/onebot_*.json）。 */
+export function guessSnowLumaHome(): string {
+  const candidates = [process.env.SNOWLUMA_HOME, path.resolve(ROOT, '..')].filter(Boolean) as string[];
+  for (const base of candidates) {
+    if (hasOneBotConfig(base)) return base;
+    try {
+      for (const e of fs.readdirSync(base, { withFileTypes: true })) {
+        if (e.isDirectory() && /snowluma/i.test(e.name) && hasOneBotConfig(path.join(base, e.name))) return path.join(base, e.name);
+      }
+    } catch { /* ignore */ }
+  }
+  return '';
+}
+
+function hasOneBotConfig(dir: string) {
+  try { return fs.readdirSync(path.join(dir, 'config')).some((f) => /^onebot_\d+\.json$/i.test(f)); } catch { return false; }
+}

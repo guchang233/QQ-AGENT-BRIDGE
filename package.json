@@ -1,0 +1,40 @@
+{
+  "name": "qq-agent-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "一体化 QQ ↔ Agent 桥接：MCP 工具、Web 控制台、插件系统（SnowLuma / OneBot v11）",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "bin": { "qab": "bin/qab.mjs" },
+  "scripts": {
+    "start": "tsx src/cli.ts start",
+    "dev": "tsx watch src/cli.ts start",
+    "mcp": "tsx src/cli.ts mcp",
+    "status": "tsx src/cli.ts status",
+    "discover": "tsx src/cli.ts discover",
+    "mock": "tsx test/mock-onebot.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "console:dev": "npm --prefix console run dev",
+    "console:build": "npm --prefix console run build"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^10.1.6",
+    "@fastify/static": "^10.1.8",
+    "@fastify/websocket": "^11.3.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "croner": "^11.0.0",
+    "fastify": "^5.12.7",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
