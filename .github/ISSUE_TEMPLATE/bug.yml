@@ -1,0 +1,17 @@
+name: 🐛 问题反馈
+description: 报告一个 bug
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: 发生了什么, description: 期望行为与实际行为 }
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes: { label: 复现步骤 }
+  - type: textarea
+    id: logs
+    attributes: { label: 日志, description: 控制台「日志」页或终端输出（请去除 token 等敏感信息）, render: text }
+  - type: input
+    id: env
+    attributes: { label: 环境, placeholder: "版本 / 操作系统 / Node 版本 / 协议端及版本" }

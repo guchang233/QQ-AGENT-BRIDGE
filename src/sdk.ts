@@ -8,6 +8,7 @@ export type {
 } from './plugins/api.ts';
 export type { Segment, ConvRef } from './message/segments.ts';
 export { parseConv, convKey, plainText } from './message/segments.ts';
+export { oneLine } from './bridge.ts';
 export type { StoredMessage } from './store/db.ts';
 export type { ToolResult, ToolContent } from './mcp/tools.ts';
 export { z } from 'zod';

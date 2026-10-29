@@ -23,7 +23,9 @@
     "console:dev": "npm --prefix console run dev",
     "console:build": "npm --prefix console run build",
     "demo": "tsx test/demo.ts",
-    "build": "npm --prefix console install && npm --prefix console run build"
+    "build": "npm --prefix console install && npm --prefix console run build",
+    "docs:gen": "tsx scripts/gen-docs.ts",
+    "check": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.6",

@@ -1,0 +1,21 @@
+name: 🧩 插件推荐 / 收录
+description: 推荐一个社区插件收录到插件列表
+labels: [plugin]
+body:
+  - type: input
+    id: repo
+    attributes: { label: 仓库地址 }
+    validations: { required: true }
+  - type: dropdown
+    id: kind
+    attributes: { label: 类型, options: [原生插件, AstrBot 插件] }
+  - type: textarea
+    id: desc
+    attributes: { label: 功能简介、命令与 Agent 工具 }
+  - type: checkboxes
+    id: ok
+    attributes:
+      label: 确认
+      options:
+        - label: 插件有 README，说明了配置项与权限需求
+        - label: 不包含恶意代码、不收集用户隐私

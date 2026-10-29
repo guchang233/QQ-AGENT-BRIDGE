@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { loadConfig, resolveFromRoot } from '../config.ts';
 
 const TEMPLATES: Record<string, (name: string) => string> = {
@@ -94,5 +95,24 @@ export function scaffoldPlugin(name: string, template = 'basic'): string {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'index.ts'), tpl(name));
   fs.writeFileSync(path.join(dir, 'README.md'), `# ${name}\n\n说明这个插件的用途、命令、配置项和 Agent 工具。\n`);
+  return dir;
+}
+
+/** 从 git 仓库安装插件到 plugins/（或 astrbot_plugins/）。安装依赖时只装生产依赖且忽略脚本。 */
+export async function installPlugin(repo: string, opts: { astrbot?: boolean } = {}): Promise<string> {
+  if (!/^(https:\/\/|git@)[\w.@:/~-]+$/.test(repo)) throw new Error('只支持 https:// 或 git@ 开头的 git 仓库地址');
+  const { config } = loadConfig();
+  const base = resolveFromRoot(opts.astrbot ? config.plugins.astrbot.dir : config.plugins.dir);
+  fs.mkdirSync(base, { recursive: true });
+  const name = repo.replace(/\.git$/, '').split(/[/:]/).pop()!.replace(/^(qab-plugin-|astrbot_plugin_)/, '');
+  const dir = path.join(base, name);
+  if (fs.existsSync(dir)) throw new Error(`已存在：${dir}（如需更新请在该目录执行 git pull）`);
+  execFileSync('git', ['clone', '--depth', '1', repo, dir], { stdio: 'inherit' });
+  if (!opts.astrbot && fs.existsSync(path.join(dir, 'package.json'))) {
+    execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--omit=dev', '--ignore-scripts'], { cwd: dir, stdio: 'inherit', shell: process.platform === 'win32' });
+  }
+  if (opts.astrbot && fs.existsSync(path.join(dir, 'requirements.txt'))) {
+    console.log(`提示：该 AstrBot 插件有 Python 依赖，请确认后手动安装：pip install -r "${path.join(dir, 'requirements.txt')}"`);
+  }
   return dir;
 }

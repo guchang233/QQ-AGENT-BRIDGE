@@ -77,11 +77,20 @@ async function main() {
       break;
     }
     case 'plugin': {
-      const { scaffoldPlugin } = await import('./plugins/scaffold.ts');
-      if (rest[0] !== 'new' || !rest[1]) { console.error('用法：qab plugin new <名称> [--template basic|command|agent-tool|service]'); process.exit(1); }
-      const dir = scaffoldPlugin(rest[1], flag('template') ?? 'basic');
-      console.log(`已创建插件：${dir}
+      const { scaffoldPlugin, installPlugin } = await import('./plugins/scaffold.ts');
+      if (rest[0] === 'new' && rest[1]) {
+        const dir = scaffoldPlugin(rest[1], flag('template') ?? 'basic');
+        console.log(`已创建插件：${dir}
 守护进程运行中会自动热重载；也可在控制台「插件」页查看。开发文档：docs/plugins.md`);
+      } else if (rest[0] === 'install' && rest[1]) {
+        const dir = await installPlugin(rest[1], { astrbot: flag('astrbot') === 'true' });
+        console.log(`已安装到 ${dir}${flag('astrbot') === 'true' ? '（AstrBot 插件，需开启兼容层）' : '，守护进程会自动加载'}`);
+      } else {
+        console.error(`用法：
+  qab plugin new <名称> [--template basic|command|agent-tool|service]
+  qab plugin install <git 仓库地址> [--astrbot]`);
+        process.exit(1);
+      }
       break;
     }
     default:
@@ -92,7 +101,8 @@ async function main() {
   qab status              探测 SnowLuma / OneBot 连接
   qab token               显示 MCP 接入方式与 token
   qab password <pwd>      重设控制台密码
-  qab plugin new <名称>   从模板创建插件（--template basic|command|agent-tool|service）`);
+  qab plugin new <名称>   从模板创建插件（--template basic|command|agent-tool|service）
+  qab plugin install <git地址> [--astrbot]  从 git 仓库安装插件`);
   }
 }
 

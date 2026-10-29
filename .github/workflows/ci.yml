@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: 构建控制台
+        run: npm --prefix console ci && npm --prefix console run build
+      - name: 参考文档是否最新
+        run: |
+          npm run docs:gen
+          git diff --exit-code -- docs/tools.md docs/system-plugins.md || (echo "请运行 npm run docs:gen 并提交" && exit 1)

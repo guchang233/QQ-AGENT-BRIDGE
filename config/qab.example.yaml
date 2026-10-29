@@ -1,0 +1,68 @@
+# QQ-Agent Bridge 配置示例（全部为默认值）。实际配置在 config/qab.yaml，首次启动自动生成，也可在 Web 控制台「设置」页修改。
+
+onebot:
+  wsUrl: ws://127.0.0.1:3001
+  httpUrl: http://127.0.0.1:3000
+  accessToken: ""
+  httpToken: ""
+  snowlumaHome: ""
+  autoDiscover: true
+  actionTimeoutMs: 30000
+  reconnectMaxMs: 30000
+server:
+  host: 127.0.0.1
+  port: 3210
+  consolePassword: ""
+  sessionSecret: 首次启动自动生成
+owners: []
+access:
+  mode: all
+  groups: []
+  private: []
+  denyGroups: []
+  denyPrivate: []
+  readOnly: false
+limits:
+  sendPerMinute: 20
+  sendPerHour: 300
+  convPerMinute: 8
+  maxMessageChars: 3000
+  gapBaseMs: 800
+  gapPerCharMs: 25
+  gapMaxMs: 6000
+agents:
+  tokens:
+    - name: default
+      token: qab_首次启动自动生成
+      tiers:
+        - read
+        - send
+        - manage
+        - danger
+      groups: []
+      private: []
+      enabled: true
+  policy:
+    read: allow
+    send: allow
+    manage: allow
+    danger: approve
+  approvalTimeoutMs: 600000
+  disabledTools: []
+media:
+  maxDownloadBytes: 31457280
+  maxInlineImageBytes: 3145728
+  uploadRoots: []
+plugins:
+  dir: plugins
+  overrides: {}
+  disabled: []
+  hotReload: true
+  commandPrefixes:
+    - /
+    - "#"
+  astrbot:
+    enabled: false
+    python: python
+    dir: astrbot_plugins
+dataDir: data

@@ -11,5 +11,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test", "plugins"]
+  "include": ["src", "test", "plugins", "scripts"]
 }
