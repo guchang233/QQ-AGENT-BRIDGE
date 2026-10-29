@@ -19,6 +19,8 @@ const AgentTokenSchema = z.object({
   groups: idList,
   private: idList,
   enabled: z.boolean().default(true),
+  /** 会话绑定：每次工具调用都必须带 convToken（由驱动在唤醒提示词里下发），权限收窄到该会话 */
+  sessionBound: z.boolean().default(false),
 });
 export type AgentToken = z.infer<typeof AgentTokenSchema>;
 
@@ -100,6 +102,33 @@ export const ConfigSchema = z.object({
       dir: z.string().default('astrbot_plugins'),
     }).prefault({}),
   }).prefault({}),
+  drivers: z.object({
+    dsh: z.object({
+      enabled: z.boolean().default(false),
+      baseUrl: z.string().default('http://127.0.0.1:3080'),
+      /** 本机 DSH 桌面版端口随机：连不上时自动探测本机 DSH 进程的端口 */
+      autoDiscover: z.boolean().default(true),
+      /** 可选：DSH 进程启动 token；留空则用 ~/.dsh 中的会话密钥离线签发（推荐） */
+      authToken: z.string().default(''),
+      allowRemote: z.boolean().default(false),
+      dshHome: z.string().default(''),
+      /** DSH profile：auto = 桌面版运行中用 desktop，否则 web */
+      profile: z.string().default('auto'),
+      /** 使用的 Agent 预设（一键接入会安装 qab-qq） */
+      preset: z.string().default('qab-qq'),
+      provider: z.string().default('deepseek-official'),
+      model: z.string().default('deepseek-flash'),
+      reasoningEffort: z.enum(['off', 'low', 'high', 'max']).default('high'),
+      workspacePath: z.string().default(''),
+      workspaceTitle: z.string().default('QQ-Agent Bridge'),
+      /** DSH 工具审批：console 交给控制台审批 / reject 一律拒绝 */
+      approvals: z.enum(['console', 'reject']).default('reject'),
+    }).prefault({}),
+  }).prefault({}),
+  usage: z.object({
+    /** 覆盖默认价目：{ models: { 'model-id': { cacheHit, cacheMiss, output } }, peakMultiplier, ... } */
+    prices: z.record(z.string(), z.any()).default({}),
+  }).prefault({}),
   dataDir: z.string().default('data'),
 });
 export type Config = z.infer<typeof ConfigSchema>;
@@ -123,7 +152,7 @@ export function loadConfig(file = CONFIG_PATH): { config: Config; created: boole
   let dirty = created;
   if (!config.server.sessionSecret) { config.server.sessionSecret = randomToken(32); dirty = true; }
   if (config.agents.tokens.length === 0) {
-    config.agents.tokens.push({ name: 'default', token: `qab_${randomToken(24)}`, tiers: ['read', 'send', 'manage', 'danger'], groups: [], private: [], enabled: true });
+    config.agents.tokens.push({ name: 'default', token: `qab_${randomToken(24)}`, tiers: ['read', 'send', 'manage', 'danger'], groups: [], private: [], enabled: true, sessionBound: false });
     dirty = true;
   }
   if (!config.onebot.snowlumaHome) {

@@ -44,6 +44,26 @@ export class Policy extends EventEmitter {
   private hour = new SlidingWindow(3_600_000);
   private convMinute = new Map<string, SlidingWindow>();
   approvals = new Map<string, Approval & { resolve: (ok: boolean) => void }>();
+  /** 会话令牌 → 会话（驱动签发，供 sessionBound token 使用） */
+  private convTokens = new Map<string, string>();
+  private convTokenOf = new Map<string, string>();
+
+  /** 为会话签发（或取回）一个会话令牌。 */
+  issueConvToken(conv: string): string {
+    const ex = this.convTokenOf.get(conv);
+    if (ex) return ex;
+    const t = `ct_${randomToken(9)}`;
+    this.convTokens.set(t, conv);
+    this.convTokenOf.set(conv, t);
+    return t;
+  }
+  resolveConvToken(t: string): string | undefined { return this.convTokens.get(t); }
+
+  /** 把调用方收窄到单个会话（会话绑定 token 用）。 */
+  narrow(caller: Caller, conv: ConvRef): Caller {
+    if (!caller.token) return caller;
+    return { ...caller, name: `${caller.name}@${conv.type}:${conv.id}`, token: { ...caller.token, groups: conv.type === 'group' ? [conv.id] : ['__none__'], private: conv.type === 'private' ? [conv.id] : ['__none__'] } };
+  }
 
   constructor(public cfg: () => Config) { super(); }
 
@@ -122,6 +142,11 @@ export class Policy extends EventEmitter {
       this.approvals.set(id, entry);
       this.emit('approval', this.publicApproval(entry));
     });
+  }
+
+  /** 向控制台发起审批并等待结果（不抛错，超时/拒绝返回 false）。 */
+  async ask(callerName: string, tool: string, tier: Tier, summary: string, params: unknown): Promise<boolean> {
+    try { await this.requestApproval({ kind: 'agent', name: callerName }, tool, tier, summary, params); return true; } catch { return false; }
   }
 
   decide(id: string, approve: boolean): boolean {

@@ -7,7 +7,7 @@ import {
 } from 'naive-ui';
 import {
   SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HappyOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
-  TerminalOutline, BookOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline,
+  TerminalOutline, BookOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, PeopleOutline, StatsChartOutline,
 } from '@vicons/ionicons5';
 import { state, checkSession, api } from './api';
 import Login from './components/Login.vue';
@@ -30,6 +30,8 @@ const menu = computed<MenuOption[]>(() => [
   { label: '表情包', key: '/stickers', icon: icon(HappyOutline) },
   { type: 'divider', key: 'd1' },
   { label: () => h(NBadge, { value: state.approvals.length, offset: [14, 0] }, { default: () => 'Agent 接入' }), key: '/agent', icon: icon(HardwareChipOutline) },
+  { label: '仿真与人格', key: '/social', icon: icon(PeopleOutline) },
+  { label: '用量', key: '/usage', icon: icon(StatsChartOutline) },
   { label: '调用审计', key: '/audit', icon: icon(ListOutline) },
   { label: '插件', key: '/plugins', icon: icon(ExtensionPuzzleOutline) },
   { label: '动作调试台', key: '/actions', icon: icon(TerminalOutline) },

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { z } from 'zod';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Bridge } from '../bridge.ts';
@@ -40,14 +41,21 @@ export function createMcpServer(bridge: Bridge, caller: Caller): McpServer {
   const disabled = new Set(bridge.config.agents.disabledTools);
   const tiers = caller.token?.tiers ?? ['read', 'send', 'manage', 'danger'];
   const all = [...buildTools(), ...extraTools.values()];
+  const bound = !!caller.token?.sessionBound;
   for (const t of all) {
     if (disabled.has(t.name) || !tiers.includes(t.tier)) continue;
     server.registerTool(t.name, {
       title: t.title,
       description: t.description,
-      inputSchema: t.input,
+      inputSchema: bound ? { ...t.input, convToken: z.string().describe('会话令牌（见提示词【会话令牌】），每次调用都必须原样传入') } : t.input,
       annotations: { readOnlyHint: !!t.readOnly, destructiveHint: t.tier === 'danger', openWorldHint: true },
-    }, async (args: any) => runTool(bridge, caller, t, args));
+    }, async (args: any) => {
+      if (!bound) return runTool(bridge, caller, t, args);
+      const { convToken, ...rest } = args ?? {};
+      const conv = convToken ? bridge.policy.resolveConvToken(String(convToken)) : undefined;
+      if (!conv) return { content: [{ type: 'text', text: '错误：会话令牌无效或缺失，操作未执行。请使用提示词中【会话令牌】的值。' }], isError: true };
+      return runTool(bridge, bridge.policy.narrow(caller, parseConv(conv)), t, rest);
+    });
   }
 
   server.registerResource('conversations', 'qq://conversations', { title: '会话列表', mimeType: 'text/plain' }, async (uri) => ({

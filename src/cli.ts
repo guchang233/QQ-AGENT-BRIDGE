@@ -23,9 +23,12 @@ async function main() {
       const { created } = loadConfig();
       if (created) console.log(`已生成默认配置：${CONFIG_PATH}`);
       const bridge = new Bridge();
+      const { DshDriver } = await import('./drivers/dsh/driver.ts');
+      bridge.registerDriver(new DshDriver(bridge));
       const plugins = new PluginHost(bridge);
       await startWeb(bridge, plugins);
       await bridge.start();
+      for (const d of bridge.drivers.values()) await d.start().catch((e: any) => console.error(`驱动 ${d.label} 启动失败：`, e.message));
       await plugins.loadAll();
       if (bridge.config.plugins.astrbot.enabled) {
         const { AstrBotHost } = await import('./plugins/astrbot.ts');
@@ -76,6 +79,32 @@ async function main() {
       console.log('控制台密码已更新（如守护进程正在运行，请重启）');
       break;
     }
+    case 'migrate': {
+      const { Bridge } = await import('./bridge.ts');
+      const { PluginHost } = await import('./plugins/host.ts');
+      const { migrateQqBridge, guessQqBridgeDir } = await import('./migrate/qqbridge.ts');
+      if (rest[0] !== 'qq-bridge') { console.error('用法：qab migrate qq-bridge [qq-bridge 目录]（请先停止守护进程）'); process.exit(1); }
+      const dir = rest[1] && !rest[1].startsWith('--') ? rest[1] : guessQqBridgeDir();
+      if (!dir) { console.error('没找到 qq-bridge 目录，请作为参数传入'); process.exit(1); }
+      const bridge = new Bridge();
+      const host = new PluginHost(bridge);
+      await host.loadAll();
+      const r = await migrateQqBridge(bridge, dir, { config: true, roles: true, social: true, stickers: true, memory: true, usage: true, slang: true });
+      for (const i of r.items) console.log(`✓ ${i.what}：${i.detail}`);
+      for (const w of r.warnings) console.log(`! ${w}`);
+      await bridge.stop();
+      process.exit(r.ok ? 0 : 1);
+    }
+    case 'dsh': {
+      const { Bridge } = await import('./bridge.ts');
+      const { installDsh, uninstallDsh, dshSetupStatus } = await import('./drivers/dsh/setup.ts');
+      const bridge = new Bridge();
+      if (rest[0] === 'install') { const r = installDsh(bridge); r.steps.forEach((x) => console.log(`✓ ${x}`)); r.warnings.forEach((x) => console.log(`! ${x}`)); console.log('请重启 DSH 使配置生效'); }
+      else if (rest[0] === 'uninstall') uninstallDsh(bridge).forEach((x) => console.log(`✓ ${x}`));
+      else console.log(JSON.stringify(dshSetupStatus(bridge), null, 2));
+      await bridge.stop();
+      process.exit(0);
+    }
     case 'plugin': {
       const { scaffoldPlugin, installPlugin } = await import('./plugins/scaffold.ts');
       if (rest[0] === 'new' && rest[1]) {
@@ -101,6 +130,8 @@ async function main() {
   qab status              探测 SnowLuma / OneBot 连接
   qab token               显示 MCP 接入方式与 token
   qab password <pwd>      重设控制台密码
+  qab dsh [install|uninstall]  接入 / 移除 DeepSeek Harness（不带参数显示状态）
+  qab migrate qq-bridge [目录]  从 qq-bridge 迁移（人格/配置/表情包/记忆/用量）
   qab plugin new <名称>   从模板创建插件（--template basic|command|agent-tool|service）
   qab plugin install <git地址> [--astrbot]  从 git 仓库安装插件`);
   }

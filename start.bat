@@ -1,18 +1,18 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-where node >nul 2>nul || (echo æœªæ‰¾åˆ° Node.jsï¼Œè¯·å…ˆå®‰è£… Node.js 24 æˆ–æ›´é«˜ç‰ˆæœ¬ï¼šhttps://nodejs.org/ & pause & exit /b 1)
+where node >nul 2>nul || (echo Î´ÕÒµ½ Node.js£¬ÇëÏÈ°²×° Node.js 24 »ò¸ü¸ß°æ±¾£ºhttps://nodejs.org/ & pause & exit /b 1)
 if not exist node_modules (
-  echo é¦–æ¬¡è¿è¡Œï¼šæ­£åœ¨å®‰è£…ä¾èµ–...
+  echo Ê×´ÎÔËÐÐ£ºÕýÔÚ°²×°ÒÀÀµ...
   call npm install || (pause & exit /b 1)
 )
 if not exist console\dist\index.html (
-  echo æ­£åœ¨æž„å»ºæŽ§åˆ¶å°...
+  echo ÕýÔÚ¹¹½¨¿ØÖÆÌ¨...
   call npm run build || (pause & exit /b 1)
 )
 :loop
 node bin\qab.mjs start
 echo.
-echo è¿›ç¨‹å·²é€€å‡ºï¼Œ5 ç§’åŽè‡ªåŠ¨é‡å¯ï¼ˆå…³é—­çª—å£å³å¯åœæ­¢ï¼‰...
+echo ½ø³ÌÒÑÍË³ö£¬5 Ãëºó×Ô¶¯ÖØÆô£¨¹Ø±Õ´°¿Ú¼´¿ÉÍ£Ö¹£©...
 timeout /t 5 >nul
 goto loop

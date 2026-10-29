@@ -201,7 +201,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   app.post('/api/tokens', async (req) => {
     const b = req.body as { name: string; tiers?: string[]; groups?: string[]; private?: string[] };
     const cfg = structuredClone(bridge.config);
-    const t = { name: b.name || `agent-${cfg.agents.tokens.length + 1}`, token: `qab_${randomToken(24)}`, tiers: (b.tiers ?? ['read', 'send']).filter((x): x is typeof TIERS[number] => (TIERS as readonly string[]).includes(x)), groups: b.groups ?? [], private: b.private ?? [], enabled: true };
+    const t = { name: b.name || `agent-${cfg.agents.tokens.length + 1}`, token: `qab_${randomToken(24)}`, tiers: (b.tiers ?? ['read', 'send']).filter((x): x is typeof TIERS[number] => (TIERS as readonly string[]).includes(x)), groups: b.groups ?? [], private: b.private ?? [], enabled: true, sessionBound: !!(b as any).sessionBound };
     cfg.agents.tokens.push(t);
     bridge.updateConfig(cfg);
     return t;
@@ -255,6 +255,70 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     return { ok: true };
   });
 
+  // ------------------------------------------------------------------ 驱动 / DSH 接入
+  app.get('/api/drivers', async () => {
+    const { dshSetupStatus } = await import('../drivers/dsh/setup.ts');
+    return { drivers: [...bridge.drivers.values()].map((d) => d.status()), dsh: { config: { ...bridge.config.drivers.dsh, authToken: bridge.config.drivers.dsh.authToken ? '••••••' : '' }, setup: dshSetupStatus(bridge) } };
+  });
+  app.post('/api/drivers/dsh/install', async () => {
+    const { installDsh } = await import('../drivers/dsh/setup.ts');
+    const r = installDsh(bridge);
+    await (bridge.drivers.get('dsh') as any)?.reconfigure?.();
+    return r;
+  });
+  app.post('/api/drivers/dsh/uninstall', async () => {
+    const { uninstallDsh } = await import('../drivers/dsh/setup.ts');
+    const steps = uninstallDsh(bridge);
+    await bridge.drivers.get('dsh')?.stop();
+    return { steps };
+  });
+  app.post('/api/drivers/dsh/test', async () => {
+    const d: any = bridge.drivers.get('dsh');
+    if (!d) return { ok: false, error: '驱动未注册' };
+    try {
+      const presets = await d.listPresets();
+      return { ok: true, presets: presets.map((p: any) => p.id), hasPreset: presets.some((p: any) => p.id === bridge.config.drivers.dsh.preset) };
+    } catch (e: any) { return { ok: false, error: e.message }; }
+  });
+  app.put('/api/drivers/dsh/config', async (req) => {
+    const cfg = structuredClone(bridge.config);
+    const b = (req.body ?? {}) as any;
+    if (b.authToken === '••••••') delete b.authToken;
+    cfg.drivers.dsh = { ...cfg.drivers.dsh, ...b };
+    bridge.updateConfig(ConfigSchema.parse(cfg));
+    await (bridge.drivers.get('dsh') as any)?.reconfigure?.();
+    return { ok: true };
+  });
+
+  // ------------------------------------------------------------------ 用量
+  app.get('/api/usage/summary', async () => bridge.usage.summary());
+  app.get('/api/usage/series', async (req) => bridge.usage.series(Math.min(Number((req.query as any).days ?? 30), 365)));
+  app.get('/api/usage/breakdown', async (req) => {
+    const q = req.query as any;
+    const rows = bridge.usage.breakdown(q.by === 'model' ? 'model' : q.by === 'driver' ? 'driver' : 'conv', q.days ? Date.now() - Number(q.days) * 86400_000 : 0);
+    return rows.map((r) => ({ ...r, name: q.by === 'conv' || !q.by ? bridge.convName(r.key) : bridge.prices().models[r.key]?.label ?? '' }));
+  });
+  app.get('/api/usage/turns', async (req) => bridge.usage.recentTurns(Math.min(Number((req.query as any).limit ?? 50), 500)));
+  app.get('/api/usage/prices', async () => bridge.prices());
+  app.put('/api/usage/prices', async (req) => {
+    const cfg = structuredClone(bridge.config);
+    cfg.usage.prices = (req.body ?? {}) as any;
+    bridge.updateConfig(cfg);
+    return { recomputed: bridge.usage.recompute() };
+  });
+
+  // ------------------------------------------------------------------ 迁移
+  app.get('/api/migrate/qq-bridge', async (req) => {
+    const { detectQqBridge, guessQqBridgeDir } = await import('../migrate/qqbridge.ts');
+    const dir = String((req.query as any).dir || guessQqBridgeDir());
+    return { dir, detected: dir ? detectQqBridge(dir) : null };
+  });
+  app.post('/api/migrate/qq-bridge', async (req) => {
+    const { migrateQqBridge } = await import('../migrate/qqbridge.ts');
+    const b = req.body as any;
+    return migrateQqBridge(bridge, String(b.dir), { config: true, roles: true, social: true, stickers: true, memory: true, usage: true, slang: true, ...(b.options ?? {}) });
+  });
+
   // 插件自定义接口：/api/p/<插件名>/<路径>
   app.all('/api/p/:plugin/*', async (req, reply) => {
     const { plugin } = req.params as { plugin: string };
@@ -285,6 +349,8 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   bridge.on('self', () => push('status', bridge.status()));
   bridge.on('contacts', () => push('contacts', null));
   bridge.on('audit', (a) => push('audit', a));
+  bridge.on('usage', (u) => push('usage', u));
+  bridge.on('driver', (d) => push('driver', d));
   bridge.on('request', (r) => push('request', r));
   bridge.on('notice', (n) => push('notice', n));
   bridge.policy.on('approval', (a) => push('approval', a));

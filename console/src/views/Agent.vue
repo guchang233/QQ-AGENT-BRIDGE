@@ -6,6 +6,8 @@ import {
 } from 'naive-ui';
 import { h } from 'vue';
 import { api, state, refreshApprovals, TIER_LABEL, TIER_TYPE, fmtFull, fmtTime } from '../api';
+import DshCard from '../components/DshCard.vue';
+import MigrateCard from '../components/MigrateCard.vue';
 
 const msg = useMessage();
 const tokens = ref<any[]>([]);
@@ -74,7 +76,9 @@ onMounted(load);
       </div>
     </n-card>
 
-    <n-card title="接入方式" size="small">
+    <DshCard />
+
+    <n-card title="接入方式（MCP：Claude Code / Cursor / Trae / WorkBuddy 等）" size="small">
       <n-text depth="3">MCP 地址：</n-text><code>{{ mcpUrl }}</code>
       <n-button size="tiny" quaternary @click="copy(mcpUrl)">复制</n-button>
       <n-alert type="info" style="margin-top: 8px" :show-icon="false">
@@ -142,6 +146,8 @@ onMounted(load);
       <n-text depth="3" style="font-size: 12px">关闭不需要的工具可以减少 Agent 的上下文占用；Agent 只会看到其 token 权限等级内的工具。插件注册的工具也会出现在这里。</n-text>
       <n-data-table :columns="toolCols" :data="filteredTools" size="small" :max-height="460" :row-key="(r: any) => r.name" style="margin-top: 8px" />
     </n-card>
+
+    <MigrateCard />
 
     <n-modal v-model:show="showNew" preset="card" title="新建 Agent Token" style="max-width: 480px">
       <n-form label-placement="top">

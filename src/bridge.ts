@@ -12,6 +12,8 @@ import { type ConvRef, type Segment, convKey, normalizeMessage, parseConv, plain
 import { parseDsl } from './message/dsl.ts';
 import { renderSegments, fmtTime } from './message/render.ts';
 import { Policy, PolicyError, type Caller, CONSOLE_CALLER } from './policy.ts';
+import { UsageLedger, DEFAULT_PRICES, type PriceTable } from './usage/ledger.ts';
+import type { AgentDriver } from './drivers/types.ts';
 import { createLogger } from './util/log.ts';
 import { sha256, guessMime, MIME_EXT, atomicWrite } from './util/fs.ts';
 
@@ -42,6 +44,9 @@ export class Bridge extends EventEmitter {
   friends = new Map<string, { id: string; nickname: string; remark: string }>();
   startedAt = Date.now();
   dataDir: string;
+  usage: UsageLedger;
+  /** 已注册的 Agent 驱动（DSH 等） */
+  drivers = new Map<string, AgentDriver>();
   /** 插件宿主（由 PluginHost 构造时挂载） */
   pluginHost?: import('./plugins/host.ts').PluginHost;
 
@@ -62,6 +67,7 @@ export class Bridge extends EventEmitter {
       uploadRoots: this.config.media.uploadRoots,
     });
     this.policy = new Policy(() => this.config);
+    this.usage = new UsageLedger(this.store.db, () => this.prices());
     this.bot.on('event', (ev) => this.onEvent(ev).catch((e) => log.error('处理事件出错', e)));
     this.bot.on('state', (s) => {
       this.emit('state', s);
@@ -89,7 +95,19 @@ export class Bridge extends EventEmitter {
     return this.discovery;
   }
 
+  /** 默认价目 + 配置覆盖。 */
+  prices(): PriceTable {
+    const o = this.config.usage.prices as Partial<PriceTable>;
+    return { ...DEFAULT_PRICES, ...o, models: { ...DEFAULT_PRICES.models, ...(o.models ?? {}) } };
+  }
+
+  registerDriver(d: AgentDriver) {
+    this.drivers.set(d.id, d);
+    d.on('state', (s) => this.emit('driver', s));
+  }
+
   async stop() {
+    for (const d of this.drivers.values()) await d.stop().catch(() => {});
     this.bot.stop();
     this.store.close();
   }

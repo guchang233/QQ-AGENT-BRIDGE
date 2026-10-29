@@ -4,3 +4,6 @@ config/qab.yaml
 console/node_modules/
 console/dist/
 *.log
+roles/*.md
+!roles/README.md
+dsh/qab-presets/
