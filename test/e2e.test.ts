@@ -39,6 +39,7 @@ beforeAll(async () => {
     agents: { tokens: [
       { name: 'full', token: 'tok-full', tiers: ['read', 'send', 'manage', 'danger'] },
       { name: 'reader', token: 'tok-read', tiers: ['read'] },
+      { name: 'scoped', token: 'tok-scoped', tiers: ['read', 'send'], groups: ['222'] },
     ], approvalTimeoutMs: 3000 },
     plugins: { dir: path.join(import.meta.dirname, '..', 'plugins') },
   });
@@ -258,6 +259,24 @@ describe('系统插件', () => {
     const cookie = login.headers.get('set-cookie')!.split(';')[0];
     const o = await (await fetch(`${base}/api/p/memory/overview`, { headers: { cookie } })).json();
     expect(o.total).toBeGreaterThan(0);
+  });
+});
+
+describe('token 会话范围', () => {
+  it('受限 token 看不到、发不到范围外会话', async () => {
+    const sc = new Client({ name: 't3', version: '1' });
+    await sc.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${PORT}/mcp`), { requestInit: { headers: { authorization: 'Bearer tok-scoped' } } }));
+    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '秘密消息111' } }]);
+    mock.pushGroupMessage(222, 20001, [{ type: 'text', data: { text: '公开消息222' } }]);
+    await waitFor(() => bridge.store.search('公开消息222').length > 0);
+    const s1 = text(await sc.callTool({ name: 'qq_search_messages', arguments: { query: '消息' } }));
+    expect(s1).toContain('公开消息222');
+    expect(s1).not.toContain('秘密消息111');
+    const convs = text(await sc.callTool({ name: 'qq_list_conversations', arguments: {} }));
+    expect(convs).not.toContain('group:111');
+    const send = await sc.callTool({ name: 'qq_send', arguments: { conv: 'group:111', message: 'x' } });
+    expect(send.isError).toBe(true);
+    await sc.close();
   });
 });
 

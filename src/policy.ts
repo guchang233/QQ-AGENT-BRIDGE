@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import type { AgentToken, Config, Tier } from './config.ts';
-import type { ConvRef } from './message/segments.ts';
+import { type ConvRef, parseConv } from './message/segments.ts';
+
+function parseConvSafe(s: string): ConvRef | null { try { return parseConv(s); } catch { return null; } }
 import { TIER_ORDER } from './onebot/catalog.ts';
 import { randomToken } from './util/fs.ts';
 
@@ -65,6 +67,13 @@ export class Policy extends EventEmitter {
     return list.includes(c.id);
   }
 
+  /** 该调用方能否看到这个会话（读取类工具用来过滤结果）。 */
+  visible(caller: Caller, conv: string | ConvRef): boolean {
+    if (caller.kind === 'console') return true;
+    const c = typeof conv === 'string' ? parseConvSafe(conv) : conv;
+    return !!c && this.convAllowed(c) && this.callerConvAllowed(caller, c);
+  }
+
   assertConv(caller: Caller, c: ConvRef) {
     if (caller.kind === 'console') return;
     if (!this.convAllowed(c)) throw new PolicyError(`会话 ${c.type}:${c.id} 不在允许范围（access 白/黑名单），操作未执行`, 'forbidden');
@@ -77,7 +86,7 @@ export class Policy extends EventEmitter {
    */
   async authorize(caller: Caller, tool: string, tier: Tier, summary: string, params: unknown): Promise<void> {
     const cfg = this.cfg();
-    if (cfg.access.readOnly && tier !== 'read' && caller.kind !== 'console') {
+    if (cfg.access.readOnly && tier !== 'read' && caller.kind === 'agent') {
       throw new PolicyError('桥接处于只读模式，非读取类操作已被拒绝', 'read_only');
     }
     if (caller.kind !== 'agent') return;

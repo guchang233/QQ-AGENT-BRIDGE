@@ -16,7 +16,7 @@ import { extraTools } from '../mcp/server.ts';
 import { searchActions, ACTIONS, actionTier } from '../onebot/catalog.ts';
 import { parseConv, convKey } from '../message/segments.ts';
 import { logHub, createLogger } from '../util/log.ts';
-import { randomToken, guessMime, MIME_EXT, sha256, atomicWrite } from '../util/fs.ts';
+import { randomToken, guessMime, MIME_EXT, sha256, atomicWrite, isInsideRoots } from '../util/fs.ts';
 import { readSnowLumaAccounts } from '../onebot/discover.ts';
 
 const log = createLogger('web');
@@ -164,7 +164,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     const p = String((req.query as any).path ?? '');
     const roots = [path.join(bridge.dataDir, 'uploads'), path.join(bridge.dataDir, 'stickers'), path.join(bridge.dataDir, 'media')];
     const abs = path.resolve(p);
-    if (!roots.some((r) => abs.toLowerCase().startsWith(r.toLowerCase())) || !fs.existsSync(abs)) return reply.code(404).send();
+    if (!isInsideRoots(abs, roots) || !fs.existsSync(abs)) return reply.code(404).send();
     const buf = fs.readFileSync(abs);
     return reply.header('content-type', guessMime(buf)).send(buf);
   });

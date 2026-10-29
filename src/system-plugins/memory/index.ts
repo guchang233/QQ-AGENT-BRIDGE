@@ -112,8 +112,8 @@ export default definePlugin({
         limit: z.number().int().min(1).max(50).default(10),
         includeForgotten: z.boolean().default(false).describe('包括保持率很低（已遗忘）的记忆'),
       },
-      handler: async (a) => {
-        const list = await service.recall(a);
+      handler: async (a, caller) => {
+        const list = (await service.recall({ ...a, limit: a.limit * 2 })).filter((m) => m.scope === 'global' || ctx.bridge.policy.visible(caller, m.scope)).slice(0, a.limit);
         return list.length ? `【记忆资料】\n${list.map(fmt).join('\n')}` : '没有相关记忆';
       },
     });
@@ -122,13 +122,15 @@ export default definePlugin({
       name: 'qq_memory_context', title: '会话相关记忆', tier: 'read', readOnly: true,
       description: '一次取回与某个会话相关的记忆：该会话范围的记忆 + 最近发言者的个人记忆 + 全局要点。适合开始回复前调用。',
       input: { conv: z.string(), recentSpeakers: z.number().int().min(0).max(20).default(6), limit: z.number().int().min(1).max(50).default(15) },
-      handler: async ({ conv, recentSpeakers, limit }) => {
+      handler: async ({ conv, recentSpeakers, limit }, caller) => {
+        ctx.bridge.policy.assertConv(caller, parseConv(conv));
         const key = convKey(parseConv(conv));
         const speakers = [...new Set(ctx.store.recent(key, 40).filter((m) => !m.isSelf).reverse().map((m) => m.senderId))].slice(0, recentSpeakers);
         const seen = new Set<number>(); const out: string[] = [];
         const add = (title: string, list: MemoryView[]) => { const l = list.filter((m) => !seen.has(m.id)); l.forEach((m) => seen.add(m.id)); if (l.length) out.push(`## ${title}\n${l.map(fmt).join('\n')}`); };
         add(`本会话 ${key}`, engine.recall({ scope: key, limit }));
-        for (const s of speakers) add(`关于 ${ctx.qq.nameOf(key, s) ?? s}(${s})`, engine.recall({ subject: s, limit: 5 }));
+        const vis = (l: MemoryView[]) => l.filter((m) => m.scope === 'global' || ctx.bridge.policy.visible(caller, m.scope));
+        for (const s of speakers) add(`关于 ${ctx.qq.nameOf(key, s) ?? s}(${s})`, vis(engine.recall({ subject: s, limit: 8 })).slice(0, 5));
         add('全局', engine.recall({ scope: 'global', limit: 5 }).filter((m) => m.importance >= 4 || m.pinned));
         return out.length ? `【记忆资料，仅供参考】\n${out.join('\n\n')}` : '暂无相关记忆';
       },

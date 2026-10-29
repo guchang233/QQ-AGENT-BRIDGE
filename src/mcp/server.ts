@@ -51,7 +51,7 @@ export function createMcpServer(bridge: Bridge, caller: Caller): McpServer {
   }
 
   server.registerResource('conversations', 'qq://conversations', { title: '会话列表', mimeType: 'text/plain' }, async (uri) => ({
-    contents: [{ uri: uri.href, text: bridge.store.conversations().filter((c) => bridge.policy.convAllowed(parseConv(c.conv))).map((c) => `${c.conv}\t${c.name}\t未读${c.unread}`).join('\n') }],
+    contents: [{ uri: uri.href, text: bridge.store.conversations().filter((c) => bridge.policy.visible(caller, c.conv)).map((c) => `${c.conv}\t${c.name}\t未读${c.unread}`).join('\n') }],
   }));
   server.registerResource('recent', new ResourceTemplate('qq://conv/{conv}/recent', { list: undefined }), { title: '会话最近消息', mimeType: 'text/plain' }, async (uri, vars) => {
     const c = parseConv(String(vars.conv));

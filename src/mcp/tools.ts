@@ -86,8 +86,8 @@ export function buildTools(): ToolDef[] {
     name: 'qq_list_conversations', title: '会话列表', tier: 'read', readOnly: true,
     description: '列出最近会话（群聊/私聊），含未读数与最后一条消息。',
     input: { limit: z.number().int().min(1).max(200).default(30), unreadOnly: z.boolean().default(false) },
-    handler: async ({ bridge }, a) => {
-      const list = bridge.store.conversations().filter((c) => (!a.unreadOnly || c.unread > 0) && bridge.policy.convAllowed(parseConv(c.conv))).slice(0, a.limit);
+    handler: async ({ bridge, caller }, a) => {
+      const list = bridge.store.conversations().filter((c) => (!a.unreadOnly || c.unread > 0) && bridge.policy.visible(caller, c.conv)).slice(0, a.limit);
       if (!list.length) return '暂无会话';
       return list.map((c) => `${c.conv} ${c.name || bridge.convName(c.conv)}｜未读${c.unread}${c.mentions ? `(@我${c.mentions})` : ''}｜${c.lastTs ? fmtTime(c.lastTs) : '-'} ${c.lastSender ? `${c.lastSender}: ` : ''}${c.lastText.slice(0, 60)}`).join('\n');
     },
@@ -97,9 +97,9 @@ export function buildTools(): ToolDef[] {
     name: 'qq_get_unread', title: '获取未读消息', tier: 'read', readOnly: true,
     description: '获取未读消息（可限定会话），默认读取后标记为已读。',
     input: { conv: conv.optional(), limit: z.number().int().min(1).max(200).default(50), markRead: z.boolean().default(true) },
-    handler: async ({ bridge }, a) => {
+    handler: async ({ bridge, caller }, a) => {
       const c = a.conv ? convKey(parseConv(a.conv)) : null;
-      const ms = bridge.store.unread(c, a.limit).filter((m) => bridge.policy.convAllowed(parseConv(m.conv)));
+      const ms = bridge.store.unread(c, a.limit).filter((m) => bridge.policy.visible(caller, m.conv));
       if (a.markRead) for (const m of ms) bridge.store.markRead(m.conv, m.seq);
       return ms.length ? groupByConv(bridge, ms) : '没有未读消息';
     },
@@ -115,8 +115,9 @@ export function buildTools(): ToolDef[] {
       mentionOnly: z.boolean().default(false).describe('只在 @我、回复我、私聊、戳我 时返回'),
       markRead: z.boolean().default(true),
     },
-    handler: async ({ bridge }, a) => {
-      const ms = await bridge.waitForMessages({ conv: a.conv, timeoutMs: a.timeoutSec * 1000, quietMs: a.quietSec * 1000, mentionOnly: a.mentionOnly });
+    handler: async ({ bridge, caller }, a) => {
+      if (a.conv) bridge.policy.assertConv(caller, parseConv(a.conv));
+      const ms = await bridge.waitForMessages({ conv: a.conv, timeoutMs: a.timeoutSec * 1000, quietMs: a.quietSec * 1000, mentionOnly: a.mentionOnly, filter: (m) => bridge.policy.visible(caller, m.conv) });
       if (a.markRead) for (const m of ms) bridge.store.markRead(m.conv, m.seq);
       return ms.length ? `收到 ${ms.length} 条新消息：\n${groupByConv(bridge, ms)}` : `等待 ${a.timeoutSec}s 无新消息`;
     },
@@ -142,8 +143,8 @@ export function buildTools(): ToolDef[] {
     name: 'qq_search_messages', title: '搜索聊天记录', tier: 'read', readOnly: true,
     description: '在本地已收录的聊天记录中按关键词搜索。',
     input: { query: z.string().min(1), conv: conv.optional(), limit: z.number().int().min(1).max(200).default(30) },
-    handler: async ({ bridge }, a) => {
-      const ms = bridge.store.search(a.query, a.conv ? convKey(parseConv(a.conv)) : undefined, a.limit).filter((m) => bridge.policy.convAllowed(parseConv(m.conv)));
+    handler: async ({ bridge, caller }, a) => {
+      const ms = bridge.store.search(a.query, a.conv ? convKey(parseConv(a.conv)) : undefined, a.limit).filter((m) => bridge.policy.visible(caller, m.conv));
       return ms.length ? groupByConv(bridge, ms) : '无匹配';
     },
   });
@@ -152,13 +153,13 @@ export function buildTools(): ToolDef[] {
     name: 'qq_get_message', title: '消息详情', tier: 'read', readOnly: true,
     description: '查看单条消息的详细内容（含原始消息段），可展开被回复的消息。',
     input: { messageId: msgId },
-    handler: async ({ bridge }, a) => {
+    handler: async ({ bridge, caller }, a) => {
       let m = bridge.store.getMessage(a.messageId);
       if (!m) {
         const r: any = await bridge.bot.call('get_msg', { message_id: Number(a.messageId) });
         m = (await bridge.ingestMessage({ ...r, post_type: 'message' }, true)) ?? bridge.store.getMessage(a.messageId);
       }
-      if (!m) return '找不到该消息';
+      if (!m || !bridge.policy.visible(caller, m.conv)) return '找不到该消息';
       const out = [msgLine(bridge, m), `会话：${m.conv}`, `消息段：${json(m.segments)}`];
       const reply = m.segments.find((s) => s.type === 'reply');
       if (reply) { const r = bridge.store.getMessage(String(reply.data.id)); if (r) out.push(`被回复的消息：${msgLine(bridge, r)}`); }

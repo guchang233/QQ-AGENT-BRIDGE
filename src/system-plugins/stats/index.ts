@@ -54,7 +54,8 @@ export default definePlugin({
       name: 'qq_group_stats', title: '群聊统计', tier: 'read', readOnly: true,
       description: '统计一个会话近 N 天的发言排行、活跃时段与消息类型（基于本地记录）。',
       input: { conv: z.string(), days: z.number().min(0.1).max(90).default(1) },
-      handler: ({ conv, days }) => {
+      handler: ({ conv, days }, caller) => {
+        ctx.bridge.policy.assertConv(caller, parseConv(conv));
         const s = compute(conv, days * 86400_000);
         return JSON.stringify({ total: s.total, speakers: s.speakers, top: s.top.slice(0, 15).map(([id, p]) => ({ id, name: p.name, messages: p.n })), hours: s.hours, peakHour: s.peak, types: s.types });
       },
