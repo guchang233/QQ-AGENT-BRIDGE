@@ -280,6 +280,20 @@ describe('token 会话范围', () => {
   });
 });
 
+describe('无状态 Agent 接口（stdio 代理使用）', () => {
+  it('列工具与调用，不依赖 MCP 会话', async () => {
+    const base = `http://127.0.0.1:${PORT}`;
+    const h = { authorization: 'Bearer tok-full', 'content-type': 'application/json' };
+    const list = await (await fetch(`${base}/api/agent/tools`, { headers: h })).json();
+    expect(list.tools.some((t: any) => t.name === 'qq_send' && t.inputSchema.properties.conv)).toBe(true);
+    const r = await (await fetch(`${base}/api/agent/call`, { method: 'POST', headers: h, body: JSON.stringify({ name: 'qq_status', arguments: {} }) })).json();
+    expect(r.content[0].text).toContain('连接：open');
+    const bad = await (await fetch(`${base}/api/agent/call`, { method: 'POST', headers: h, body: JSON.stringify({ name: 'qq_send', arguments: { conv: 'group:111' } }) })).json();
+    expect(bad.isError).toBe(true);
+    expect((await fetch(`${base}/api/agent/tools`, { headers: { authorization: 'Bearer nope' } })).status).toBe(401);
+  });
+});
+
 describe('控制台 API', () => {
   it('未登录 401，登录后可访问', async () => {
     const base = `http://127.0.0.1:${PORT}`;

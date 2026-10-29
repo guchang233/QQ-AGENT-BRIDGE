@@ -10,7 +10,7 @@ import type { Bridge } from '../bridge.ts';
 import type { PluginHost } from '../plugins/host.ts';
 import { CONSOLE_CALLER } from '../policy.ts';
 import { ConfigSchema, ROOT, TIERS, type Config } from '../config.ts';
-import { handleMcpHttp, mcpSessions } from '../mcp/server.ts';
+import { handleMcpHttp, mcpSessions, toolsFor, callToolStateless } from '../mcp/server.ts';
 import { buildTools } from '../mcp/tools.ts';
 import { extraTools } from '../mcp/server.ts';
 import { searchActions, ACTIONS, actionTier } from '../onebot/catalog.ts';
@@ -23,7 +23,7 @@ const log = createLogger('web');
 const COOKIE = 'qab_session';
 
 export async function startWeb(bridge: Bridge, plugins: PluginHost) {
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024, requestTimeout: 0, connectionTimeout: 0, keepAliveTimeout: 65_000 });
   await app.register(fastifyWs);
   await app.register(fastifyMultipart, { limits: { fileSize: 64 * 1024 * 1024 } });
 
@@ -42,10 +42,28 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     }
   });
 
+  // ------------------------------------------------------------------ 无状态 Agent 接口（stdio 代理 / 任意语言 Agent）
+  const agentCaller = (req: FastifyRequest) => {
+    const t = bridge.policy.findToken(String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, ''));
+    return t ? { kind: 'agent' as const, name: t.name, token: t } : null;
+  };
+  app.get('/api/agent/tools', async (req, reply) => {
+    const caller = agentCaller(req);
+    if (!caller) return reply.code(401).send({ error: '无效的 agent token' });
+    const { SERVER_INSTRUCTIONS } = await import('../mcp/server.ts');
+    return { instructions: SERVER_INSTRUCTIONS, tools: toolsFor(bridge, caller) };
+  });
+  app.post('/api/agent/call', async (req, reply) => {
+    const caller = agentCaller(req);
+    if (!caller) return reply.code(401).send({ error: '无效的 agent token' });
+    const b = (req.body ?? {}) as { name?: string; arguments?: unknown };
+    return callToolStateless(bridge, caller, String(b.name ?? ''), b.arguments);
+  });
+
   // ------------------------------------------------------------------ 鉴权
   app.addHook('onRequest', async (req, reply) => {
     const url = req.url.split('?')[0];
-    if (!url.startsWith('/api/') || url === '/api/login' || url === '/api/session' || url.startsWith('/api/setup')) return;
+    if (!url.startsWith('/api/') || url === '/api/login' || url === '/api/session' || url.startsWith('/api/setup') || url.startsWith('/api/agent/')) return;
     if (!authed(req)) { reply.code(401).send({ error: needsSetup() ? 'setup_required' : 'unauthorized' }); }
   });
 

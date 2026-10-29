@@ -16,6 +16,8 @@ import { BUNDLE_NAME, MCP_SERVER_NAME, PRESET_ID, TOOL_RESTRICT_SOURCE, presetPa
 const BEGIN = '# === qq-agent-bridge MCP BEGIN ===';
 const END = '# === qq-agent-bridge MCP END ===';
 const DSH_TOKEN_NAME = 'dsh';
+/** stdio 代理的修订号；修改代理逻辑时递增 */
+const PROXY_REV = '3';
 
 export interface SetupStatus {
   dshHome: string; profile: string; profileDir: string; profileExists: boolean;
@@ -161,6 +163,9 @@ export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; res
     '          - mcp',
     '          - --token',
     `          - ${q(tok.token)}`,
+    // 代理版本号：升级代理后改变它，DSH（热重载）会重新拉起 MCP 进程以加载新代码
+    '          - --proxy-rev',
+    `          - '${PROXY_REV}'`,
     '        toolCallTimeoutMs: 1900000',
     END,
   ].join(NL);

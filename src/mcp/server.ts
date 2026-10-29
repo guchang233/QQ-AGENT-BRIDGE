@@ -75,6 +75,41 @@ export function createMcpServer(bridge: Bridge, caller: Caller): McpServer {
   return server;
 }
 
+/**
+ * 无状态工具接口（qq-bridge 的模式）：每次调用一个独立 HTTP 请求，不依赖 MCP 会话，
+ * 守护进程重启对调用方透明。stdio 代理与任何语言的 Agent 都可以直接用。
+ */
+export function toolsFor(bridge: Bridge, caller: Caller) {
+  const disabled = new Set(bridge.config.agents.disabledTools);
+  const tiers = caller.token?.tiers ?? ['read', 'send', 'manage', 'danger'];
+  const bound = !!caller.token?.sessionBound;
+  return [...buildTools(), ...extraTools.values()].filter((t) => !disabled.has(t.name) && tiers.includes(t.tier)).map((t) => {
+    const shape = bound ? { ...t.input, convToken: z.string().describe('会话令牌（见提示词【会话令牌】），每次调用都必须原样传入') } : t.input;
+    return {
+      name: t.name, title: t.title, description: t.description,
+      inputSchema: z.toJSONSchema(z.object(shape), { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>,
+      annotations: { readOnlyHint: !!t.readOnly, destructiveHint: t.tier === 'danger', openWorldHint: true },
+    };
+  });
+}
+
+export async function callToolStateless(bridge: Bridge, caller: Caller, name: string, rawArgs: unknown): Promise<ToolResult> {
+  const t = (buildTools().find((x) => x.name === name) ?? extraTools.get(name));
+  const tiers = caller.token?.tiers ?? ['read', 'send', 'manage', 'danger'];
+  if (!t || bridge.config.agents.disabledTools.includes(name) || !tiers.includes(t.tier)) return { content: [{ type: 'text', text: `错误：工具 ${name} 不存在或无权使用，操作未执行` }], isError: true };
+  let args: any = rawArgs ?? {};
+  if (caller.token?.sessionBound) {
+    const { convToken, ...rest } = args;
+    const conv = convToken ? bridge.policy.resolveConvToken(String(convToken)) : undefined;
+    if (!conv) return { content: [{ type: 'text', text: '错误：会话令牌无效或缺失，操作未执行。请使用提示词中【会话令牌】的值。' }], isError: true };
+    caller = bridge.policy.narrow(caller, parseConv(conv));
+    args = rest;
+  }
+  const parsed = z.object(t.input).safeParse(args);
+  if (!parsed.success) return { content: [{ type: 'text', text: `错误：参数不正确，操作未执行：${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}` }], isError: true };
+  return runTool(bridge, caller, t, parsed.data);
+}
+
 export async function runTool(bridge: Bridge, caller: Caller, t: ToolDef, args: any): Promise<ToolResult> {
   try {
     const exec = () => t.handler({ bridge, caller }, args ?? {});

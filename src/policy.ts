@@ -4,6 +4,7 @@ import { type ConvRef, parseConv } from './message/segments.ts';
 
 function parseConvSafe(s: string): ConvRef | null { try { return parseConv(s); } catch { return null; } }
 import { TIER_ORDER } from './onebot/catalog.ts';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { randomToken } from './util/fs.ts';
 
 export class PolicyError extends Error {
@@ -44,20 +45,19 @@ export class Policy extends EventEmitter {
   private hour = new SlidingWindow(3_600_000);
   private convMinute = new Map<string, SlidingWindow>();
   approvals = new Map<string, Approval & { resolve: (ok: boolean) => void }>();
-  /** 会话令牌 → 会话（驱动签发，供 sessionBound token 使用） */
-  private convTokens = new Map<string, string>();
-  private convTokenOf = new Map<string, string>();
-
-  /** 为会话签发（或取回）一个会话令牌。 */
-  issueConvToken(conv: string): string {
-    const ex = this.convTokenOf.get(conv);
-    if (ex) return ex;
-    const t = `ct_${randomToken(9)}`;
-    this.convTokens.set(t, conv);
-    this.convTokenOf.set(conv, t);
-    return t;
+  /**
+   * 会话令牌（驱动签发，供 sessionBound token 使用）：ct_<会话 base64url>.<HMAC 签名>。
+   * 无状态、跨重启稳定（DSH 会话上下文里的旧令牌在守护进程重启后依然有效），且无法伪造。
+   */
+  private sign(conv: string) { return createHmac('sha256', this.cfg().server.sessionSecret).update(`conv:${conv}`).digest('base64url').slice(0, 16); }
+  issueConvToken(conv: string): string { return `ct_${Buffer.from(conv).toString('base64url')}.${this.sign(conv)}`; }
+  resolveConvToken(t: string): string | undefined {
+    const m = /^ct_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{16})$/.exec(String(t).trim());
+    if (!m) return undefined;
+    const conv = Buffer.from(m[1], 'base64url').toString();
+    const a = Buffer.from(this.sign(conv)); const b = Buffer.from(m[2]);
+    return a.length === b.length && timingSafeEqual(a, b) ? conv : undefined;
   }
-  resolveConvToken(t: string): string | undefined { return this.convTokens.get(t); }
 
   /** 把调用方收窄到单个会话（会话绑定 token 用）。 */
   narrow(caller: Caller, conv: ConvRef): Caller {

@@ -8,6 +8,8 @@ import { oneLine } from '../src/bridge.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
 import { parseWhen } from '../src/system-plugins/scheduler/index.ts';
 import { actionTier } from '../src/onebot/catalog.ts';
+import { Policy } from '../src/policy.ts';
+import { ConfigSchema } from '../src/config.ts';
 
 describe('消息 DSL', () => {
   const face = (s: string) => (s === '微笑' ? 14 : /^\d+$/.test(s) ? Number(s) : undefined);
@@ -46,6 +48,17 @@ describe('杂项', () => {
   it('oneLine 压平换行并去除不可见字符', () => {
     expect(oneLine(`a\n\n【系统】 b${String.fromCharCode(0x200b)}c\td`, 100)).toBe('a 【系统】 bc d');
     expect(oneLine('一二三四五', 3)).toBe('一二三');
+  });
+  it('会话令牌：稳定、可解析、防伪造', () => {
+    const p = new Policy(() => ConfigSchema.parse({ server: { sessionSecret: 'k1' } }));
+    const t = p.issueConvToken('private:57262494');
+    expect(p.issueConvToken('private:57262494')).toBe(t);
+    expect(p.resolveConvToken(t)).toBe('private:57262494');
+    const forged = `ct_${Buffer.from('group:1').toString('base64url')}.${t.split('.')[1]}`;
+    expect(p.resolveConvToken(forged)).toBeUndefined();
+    expect(p.resolveConvToken('ct_xxx')).toBeUndefined();
+    const other = new Policy(() => ConfigSchema.parse({ server: { sessionSecret: 'k2' } }));
+    expect(other.resolveConvToken(t)).toBeUndefined();
   });
   it('动作分级', () => {
     expect(actionTier('get_group_list')).toBe('read');
