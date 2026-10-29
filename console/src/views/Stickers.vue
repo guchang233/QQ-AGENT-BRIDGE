@@ -9,7 +9,13 @@ const q = ref('');
 const url = ref('');
 
 async function load() { list.value = await api(`/api/stickers?q=${encodeURIComponent(q.value)}`); }
-async function save(s: any) { await api(`/api/stickers/${s.id}`, { method: 'PATCH', body: { remark: s.remark, tags: s.tags } }); msg.success('已保存'); }
+async function save(s: any) { await api(`/api/stickers/${s.id}`, { method: 'PATCH', body: { remark: s.remark, tags: s.tags, note: s.note } }); msg.success('已保存'); }
+const syncing = ref(false);
+async function sync() {
+  syncing.value = true;
+  try { const r = await api('/api/p/stickers/sync', { method: 'POST' }); msg.success(`同步完成：新增 ${r.added} 张`); load(); }
+  catch (e: any) { msg.error(e.status === 404 ? '表情包插件未启用' : e.message); } finally { syncing.value = false; }
+}
 async function del(s: any) { await api(`/api/stickers/${s.id}`, { method: 'DELETE' }); load(); }
 async function addFiles() {
   const input = document.createElement('input');
@@ -37,6 +43,7 @@ onMounted(load);
       <n-button type="primary" @click="addFiles">上传图片</n-button>
       <n-input v-model:value="url" placeholder="或粘贴图片 URL" style="width: 260px" @keyup.enter="addUrl" />
       <n-button @click="addUrl">添加</n-button>
+      <n-button :loading="syncing" @click="sync">同步 QQ 收藏表情</n-button>
     </n-space>
     <n-text depth="3" style="font-size: 12px">表情包库同时供人和 Agent 使用：Agent 通过 qq_list_stickers / qq_send_sticker 调用，消息中用 [sticker:ID] 发送。聊天页的消息菜单可直接「收藏为表情包」。备注越清楚，Agent 越会用。</n-text>
     <n-empty v-if="!list.length" description="还没有表情包" style="margin-top: 40px" />
@@ -44,8 +51,9 @@ onMounted(load);
       <n-card v-for="s in list" :key="s.id" size="small" class="item">
         <template #cover><img :src="`/api/stickers/${s.id}/image`" class="img" /></template>
         <n-space vertical :size="4">
-          <n-space justify="space-between" align="center"><n-tag size="small">#{{ s.id }}</n-tag><span style="font-size: 11px; opacity: .55">用过 {{ s.uses }} 次</span></n-space>
+          <n-space justify="space-between" align="center"><n-space :size="4"><n-tag size="small">#{{ s.id }}</n-tag><n-tag v-if="s.source === 'qq'" size="small" type="info" :bordered="false">QQ收藏</n-tag><n-tag v-else-if="s.source === 'auto'" size="small" :bordered="false">自动</n-tag></n-space><span style="font-size: 11px; opacity: .55">用过 {{ s.uses }} 次</span></n-space>
           <n-input v-model:value="s.remark" size="tiny" placeholder="备注（如：无语、狗头）" @blur="save(s)" />
+          <n-input v-model:value="s.note" size="tiny" placeholder="理解（AI 看图后的描述）" @blur="save(s)" />
           <n-input v-model:value="s.tags" size="tiny" placeholder="标签，逗号分隔" @blur="save(s)" />
           <n-popconfirm @positive-click="del(s)"><template #trigger><n-button size="tiny" type="error" ghost block>删除</n-button></template>确定删除？</n-popconfirm>
         </n-space>

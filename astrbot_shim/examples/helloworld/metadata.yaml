@@ -1,0 +1,5 @@
+name: helloworld
+display_name: AstrBot 示例
+desc: 演示 AstrBot 插件在 QQ-Agent Bridge 上运行
+version: v1.0.0
+author: qab

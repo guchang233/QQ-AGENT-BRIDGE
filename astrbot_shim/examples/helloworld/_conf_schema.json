@@ -1,0 +1,4 @@
+{
+  "greeting": { "type": "string", "description": "问候语", "default": "Hello" },
+  "times": { "type": "int", "description": "重复次数", "default": 1 }
+}
