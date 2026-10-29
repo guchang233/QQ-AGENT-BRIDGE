@@ -276,8 +276,9 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     const d: any = bridge.drivers.get('dsh');
     if (!d) return { ok: false, error: '驱动未注册' };
     try {
+      await d.locate?.();
       const presets = await d.listPresets();
-      return { ok: true, presets: presets.map((p: any) => p.id), hasPreset: presets.some((p: any) => p.id === bridge.config.drivers.dsh.preset) };
+      return { ok: true, baseUrl: bridge.config.drivers.dsh.baseUrl, presets: presets.map((p: any) => p.id), hasPreset: presets.some((p: any) => p.id === bridge.config.drivers.dsh.preset) };
     } catch (e: any) { return { ok: false, error: e.message }; }
   });
   app.put('/api/drivers/dsh/config', async (req) => {
@@ -329,6 +330,12 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     return r ?? { ok: true };
   });
 
+  app.get('/api/activity', async (req) => {
+    const q = req.query as any;
+    return bridge.store.activities({ conv: q.conv || undefined, kind: q.kind || undefined, before: q.before ? Number(q.before) : undefined, limit: Math.min(Number(q.limit ?? 200), 1000) })
+      .map((r: any) => ({ ...r, convName: r.conv ? bridge.convName(r.conv) : '' }));
+  });
+
   app.get('/api/logs', async () => logHub.ring.slice(-500));
 
   // ------------------------------------------------------------------ 实时推送
@@ -350,6 +357,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   bridge.on('contacts', () => push('contacts', null));
   bridge.on('audit', (a) => push('audit', a));
   bridge.on('usage', (u) => push('usage', u));
+  bridge.on('activity', (a) => push('activity', { ...a, convName: a.conv ? bridge.convName(a.conv) : '' }));
   bridge.on('driver', (d) => push('driver', d));
   bridge.on('request', (r) => push('request', r));
   bridge.on('notice', (n) => push('notice', n));

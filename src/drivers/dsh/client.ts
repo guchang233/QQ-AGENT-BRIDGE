@@ -166,8 +166,8 @@ export class DshClient extends EventEmitter {
   }
 
   // ------------------------------------------------------------------ 事件流
-  start() { this.stopped = false; void this.connect(); }
-  stop() { this.stopped = true; clearTimeout(this.timer); this.ws?.close(); }
+  start() { if (!this.stopped && (this.ws || this.timer)) return; this.stopped = false; void this.connect(); }
+  stop() { this.stopped = true; clearTimeout(this.timer); this.timer = undefined; this.ws?.close(); this.ws = undefined; }
 
   follow(sessionId: string) {
     this.follows.add(sessionId);
@@ -209,7 +209,7 @@ export class DshClient extends EventEmitter {
     if (this.stopped) return;
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.retry++, 5));
     if (this.retry <= 1 || this.retry % 5 === 0) log.warn(`DSH 事件流不可用（${why}），${Math.round(delay / 1000)}s 后重连`);
-    this.timer = setTimeout(() => this.connect(), delay);
+    this.timer = setTimeout(() => { this.timer = undefined; void this.connect(); }, delay);
   }
 
   private openFollow(sessionId: string) {

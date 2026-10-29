@@ -7,7 +7,7 @@ import {
 } from 'naive-ui';
 import {
   SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HappyOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
-  TerminalOutline, BookOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, PeopleOutline, StatsChartOutline,
+  TerminalOutline, BookOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, PeopleOutline, StatsChartOutline, PulseOutline,
 } from '@vicons/ionicons5';
 import { state, checkSession, api } from './api';
 import Login from './components/Login.vue';
@@ -25,6 +25,7 @@ const collapsed = ref(window.innerWidth < 900);
 const icon = (c: any) => () => h(NIcon, null, { default: () => h(c) });
 const menu = computed<MenuOption[]>(() => [
   { label: '仪表盘', key: '/dashboard', icon: icon(SpeedometerOutline) },
+  { label: '动态', key: '/activity', icon: icon(PulseOutline) },
   { label: '聊天', key: '/chat', icon: icon(ChatbubblesOutline) },
   { label: 'QQ空间', key: '/qzone', icon: icon(PlanetOutline) },
   { label: '表情包', key: '/stickers', icon: icon(HappyOutline) },

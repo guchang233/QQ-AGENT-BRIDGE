@@ -7,6 +7,7 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', component: () => import('./views/Dashboard.vue'), meta: { title: '仪表盘' } },
+    { path: '/activity', component: () => import('./views/Activity.vue'), meta: { title: '动态' } },
     { path: '/chat/:conv?', component: () => import('./views/Chat.vue'), meta: { title: '聊天' } },
     { path: '/qzone', component: () => import('./views/QZone.vue'), meta: { title: 'QQ空间' } },
     { path: '/stickers', component: () => import('./views/Stickers.vue'), meta: { title: '表情包' } },

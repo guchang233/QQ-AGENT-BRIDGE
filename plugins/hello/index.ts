@@ -15,8 +15,8 @@ export default definePlugin({
     pokeBack: { type: 'bool', default: true, description: '被戳时戳回去' },
   },
   setup(ctx) {
-    // 命令：/hello [名字]   （私聊或 @我 时可以不带前缀）
-    ctx.command(['hello', '你好'], async (e) => {
+    // 命令：/hello [名字]   （群里 @我 时可以不带前缀）
+    ctx.command(['hello'], async (e) => {
       await e.reply(`${ctx.config.greeting}，${e.argText || e.senderName}！[face:微笑]`);
     }, { desc: '打个招呼', usage: '[名字]' });
 

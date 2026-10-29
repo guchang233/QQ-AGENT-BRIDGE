@@ -92,6 +92,10 @@ export class DshDriver extends EventEmitter implements AgentDriver {
       this.client.stop();
       this.client.removeAllListeners();
       this.client = this.makeClient();
+      this.workspaceId = '';
+      for (const r of this.sessions.values()) this.client.follow(r.sessionId);
+      this.client.start();
+      this.bridge.activity({ kind: 'info', actor: 'DSH', title: `重新连接到 DSH：${found}` });
     } else if (!found) this.setState('error', 'DSH 未运行或无法鉴权（已尝试自动发现本机端口）');
     return found;
   }
@@ -151,6 +155,9 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         await this.client.call('session/selectModel', { sessionId, provider: this.cfg.provider, model: this.cfg.model, reasoningEffort: this.cfg.reasoningEffort })
           .catch((e) => log.warn(`选择模型失败（将使用 DSH 默认模型）：${e.message}`));
       }
+      // 按 QQ 会话命名，方便在 DSH 侧边栏里找到并查看完整调用（尽力而为）
+      const title = `QQ ${conv.startsWith('group:') ? '群' : '私聊'} · ${this.bridge.convName(conv) || conv}`;
+      await this.client.call('session/rename', { sessionId, title }).catch(() => {});
       const rec: SessionRec = { sessionId, preset: this.cfg.preset, model: this.cfg.model, created: Date.now() };
       this.sessions.set(conv, rec);
       this.convOf.set(sessionId, conv);
@@ -190,6 +197,15 @@ export class DshDriver extends EventEmitter implements AgentDriver {
 
   // ------------------------------------------------------------------ 唤醒
   async wake(req: WakeRequest) {
+    try { await this.wakeOnce(req); }
+    catch (e: any) {
+      // DSH 重启后端口会变：重新定位一次再试
+      if (e?.code === 'unreachable' && (await this.locate())) await this.wakeOnce(req);
+      else throw e;
+    }
+  }
+
+  private async wakeOnce(req: WakeRequest) {
     if (!this.cfg.enabled) throw new DshError('disabled', 'DSH 驱动未启用');
     let rec = await this.ensureSession(req.conv);
     const content: any[] = [{ type: 'text', text: req.prompt }];
@@ -205,6 +221,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         await this.client.call('session/prompt', { sessionId: rec.sessionId, mode: 'queue', content });
       } else { this.busyUntil.delete(req.conv); throw e; }
     }
+    this.bridge.activity({ kind: 'wake', level: 'success', conv: req.conv, actor: 'DSH', title: '已送达 DSH', detail: { session: rec.sessionId, reason: req.reason, chars: req.prompt.length } });
   }
 
   // ------------------------------------------------------------------ 事件
@@ -217,6 +234,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         this.turns.set(sid, { conv, turn: Number(d.turn), startedAt: Date.now(), text: '', tools: [], model: this.lastModel.get(sid) ?? '', retries: new Map() });
         this.busyUntil.set(conv, Date.now() + BUSY_LEASE_MS);
         this.emit('turn-start', conv);
+        this.bridge.activity({ kind: 'turn', conv, actor: 'DSH', title: `DSH 开始思考（第 ${d.turn} 轮）`, detail: { session: sid } });
         break;
       case 'model/selection':
         if (d.model) this.lastModel.set(sid, String(d.model));
@@ -259,6 +277,12 @@ export class DshDriver extends EventEmitter implements AgentDriver {
           error: d.reason?.error?.message, text: t?.text ?? '', tools: t?.tools ?? [], durationMs: t ? Date.now() - t.startedAt : 0,
         };
         if (r.reason === 'error') log.warn(`${conv} 的 DSH 回合出错：${r.error}`);
+        const used = this.bridge.store.db.prepare('SELECT SUM(cache_miss + cache_hit + cache_write) AS i, SUM(output) AS o, SUM(cost) AS c FROM usage_samples WHERE driver = ? AND session = ? AND turn = ?').get('dsh', sid, Number(d.turn)) as any;
+        this.bridge.activity({
+          kind: 'turn', level: r.reason === 'error' ? 'error' : 'info', conv, actor: 'DSH',
+          title: r.reason === 'error' ? `DSH 回合出错：${r.error ?? ''}` : `DSH 回合结束（${Math.round(r.durationMs / 100) / 10}s）${r.tools.length ? '' : '，没有调用工具'}`,
+          detail: { tools: r.tools, text: r.text.slice(0, 500), tokens: { input: Number(used?.i ?? 0), output: Number(used?.o ?? 0) }, cost: Number(used?.c ?? 0), session: sid },
+        });
         this.emit('turn-end', conv, r);
         break;
       }

@@ -101,6 +101,15 @@ export class Bridge extends EventEmitter {
     return { ...DEFAULT_PRICES, ...o, models: { ...DEFAULT_PRICES.models, ...(o.models ?? {}) } };
   }
 
+  /**
+   * 记录一条「动态」（控制台时间线）：唤醒、送达、回合、发出的消息、错误等。
+   * kind: trigger / wake / turn / sent / error / info
+   */
+  activity(a: { kind: string; level?: 'info' | 'warn' | 'error' | 'success'; conv?: string; actor?: string; title: string; detail?: unknown }) {
+    const id = this.store.addActivity(a);
+    this.emit('activity', { id, ts: Date.now(), ...a, detail: a.detail === undefined ? '' : typeof a.detail === 'string' ? a.detail : JSON.stringify(a.detail) });
+  }
+
   registerDriver(d: AgentDriver) {
     this.drivers.set(d.id, d);
     d.on('state', (s) => this.emit('driver', s));
@@ -274,6 +283,7 @@ export class Bridge extends EventEmitter {
       return r;
     } catch (e: any) {
       const id = this.store.audit({ agent: caller.name, tool, tier, params, ok: false, result: e?.message ?? String(e), ms: Date.now() - t0 });
+      if (tool === 'send') this.activity({ kind: 'error', level: 'error', conv: (params as any)?.conv, actor: caller.name, title: '发送失败', detail: e?.message ?? String(e) });
       this.emit('audit', { id, ts: Date.now(), agent: caller.name, kind: caller.kind, tool, tier, ok: false, ms: Date.now() - t0, params: short(params, 300), error: e?.message });
       throw e;
     }
@@ -319,6 +329,8 @@ export class Bridge extends EventEmitter {
           const id = await this.sendSegments(c, segments);
           ids.push(id);
           this.policy.recordSend(caller, conv);
+          const m = this.store.getMessage(id, conv);
+          this.activity({ kind: 'sent', level: 'success', conv, actor: caller.name, title: `发给 ${this.convName(conv) || conv}`, detail: m?.text ?? '' });
         }
         for (const u of uploads) await this.uploadFile(c, u.file, u.name);
       }

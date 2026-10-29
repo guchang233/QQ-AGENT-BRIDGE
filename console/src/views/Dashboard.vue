@@ -3,22 +3,28 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NGrid, NGi, NCard, NStatistic, NAlert, NButton, NSpace, NList, NListItem, NThing, NAvatar, NTag, NEmpty, NDescriptions, NDescriptionsItem, useMessage } from 'naive-ui';
 import { api, state, onPush, avatarOf, fmtTime, fmtFull } from '../api';
+import ActivityList from '../components/ActivityList.vue';
 
 const msg = useMessage();
 const router = useRouter();
 const convs = ref<any[]>([]);
 const requests = ref<any[]>([]);
+const acts = ref<any[]>([]);
 const s = computed(() => state.status ?? {});
 
 async function load() {
   const [st, c, r] = await Promise.all([api('/api/status'), api('/api/conversations'), api('/api/requests')]);
   state.status = st; convs.value = c.filter((x: any) => x.unread > 0).slice(0, 8); requests.value = r;
+  acts.value = await api('/api/activity?limit=12');
 }
 async function reconnect() { try { await api('/api/reconnect', { method: 'POST' }); msg.success('已重新探测'); load(); } catch (e: any) { msg.error(e.message); } }
 async function handleReq(flag: string, approve: boolean) { await api(`/api/requests/${flag}`, { body: { approve } }); msg.success(approve ? '已同意' : '已拒绝'); load(); }
 
 let timer: any;
-const off = onPush((t) => { if (t === 'message' || t === 'request') { clearTimeout(timer); timer = setTimeout(load, 800); } });
+const off = onPush((t, d) => {
+  if (t === 'activity') { acts.value.unshift(d); acts.value.length = Math.min(acts.value.length, 12); }
+  if (t === 'message' || t === 'request') { clearTimeout(timer); timer = setTimeout(load, 800); }
+});
 onMounted(load);
 onUnmounted(() => { off(); clearTimeout(timer); });
 const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 86400 ? `${Math.floor(u / 86400)} 天` : u > 3600 ? `${Math.floor(u / 3600)} 小时` : `${Math.floor(u / 60)} 分钟`; });
@@ -40,6 +46,10 @@ const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 864
 
     <n-grid cols="1 m:2" responsive="screen" :x-gap="12" :y-gap="12">
       <n-gi>
+        <n-card title="最近动态" size="small" style="margin-bottom: 12px">
+          <template #header-extra><n-button size="tiny" quaternary @click="router.push('/activity')">全部</n-button></template>
+          <ActivityList :items="acts" compact />
+        </n-card>
         <n-card title="未读会话" size="small">
           <n-empty v-if="!convs.length" description="没有未读消息" />
           <n-list v-else hoverable clickable>

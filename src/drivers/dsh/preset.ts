@@ -104,6 +104,8 @@ ${yamlBlock(PERSONA_PREFIX, 16)}
               fetch: false
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
           - id: qab-tool-restrict
             name: ${BUNDLE_NAME}/qab-tool-restrict.mjs
             config: {}

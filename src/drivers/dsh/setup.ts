@@ -175,8 +175,10 @@ export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; res
     const ex = bundles.find((b) => b?.name === BUNDLE_NAME);
     let r: any;
     if (ex?.installed) {
+      // 已安装：bundle 是链接，文件已更新；先停用再启用，让 DSH 重新加载预设
+      await dsh.call('pluginManager/setBundleEnabled', { name: BUNDLE_NAME, enabled: false }).catch(() => {});
       r = await dsh.call('pluginManager/setBundleEnabled', { name: BUNDLE_NAME, enabled: true });
-      steps.push('预设 bundle 已安装，已通过 DSH 插件管理器重新启用（文件为链接，内容已更新）');
+      steps.push('预设 bundle 已更新，并通过 DSH 插件管理器重新加载');
     } else {
       const spec = `link:${slash(p.bundleSrc)}`;
       r = await dsh.call('pluginManager/installBundle', { spec, options: { enabled: true, requestId: `qab-${Date.now()}` } });
@@ -185,10 +187,15 @@ export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; res
     }
     const outcome = JSON.stringify(r ?? {});
     restartRequired = /restart/i.test(outcome) && !/"restartRequired":false/.test(outcome);
-    // 确认预设已出现
-    const presets: any = await dsh.call('agentPresets/list', {}).catch(() => null);
-    if (presets?.presets?.some((x: any) => x.id === PRESET_ID)) { steps.push(`DSH 中已出现预设「${PRESET_ID}」`); restartRequired = false; }
-    else warnings.push(`DSH 中暂未出现预设「${PRESET_ID}」，请重启 DSH 后在此处点「测试连接」`);
+    // 确认预设已出现（DSH 热加载需要一点时间，最多等 10 秒）
+    let seen = false;
+    for (let i = 0; i < 20 && !seen; i++) {
+      const presets: any = await dsh.call('agentPresets/list', {}).catch(() => null);
+      seen = !!presets?.presets?.some((x: any) => x.id === PRESET_ID);
+      if (!seen) await new Promise((res) => setTimeout(res, 500));
+    }
+    if (seen) { steps.push(`DSH 已加载预设「${PRESET_ID}」，无需重启`); restartRequired = false; }
+    else warnings.push(`等待 10 秒仍未看到预设「${PRESET_ID}」：可以稍后点「测试连接」确认，仍没有再重启 DSH`);
   } else {
     manualRegister(p);
     steps.push('DSH 未运行：已手动链接 bundle 并写入 profile package.json');

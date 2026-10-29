@@ -49,7 +49,8 @@ export default definePlugin({
     forwardText: { type: 'bool', default: false, description: '兜底：Agent 本轮没调用发送工具时，把它的文字回复发出去（一般不建议）', group: '提示词' },
   },
   setup(ctx) {
-    const c = ctx.config;
+    // 始终读取最新配置（saveConfig 会替换配置对象，不能在 setup 时固定引用）
+    const c = new Proxy({} as typeof ctx.config, { get: (_t, k) => (ctx.config as any)[k] });
     const bridge = ctx.bridge;
     const roles = new RoleStore(path.join(ROOT, 'roles'), () => c.roleMaxChars);
     if (!roles.list().length) roles.save('默认群友', DEFAULT_ROLE);
@@ -63,7 +64,8 @@ export default definePlugin({
     });
 
     // ------------------------------------------------------------ 状态
-    const enabled = new Set(c.convs.map((x) => convKey(parseConv(x))));
+    const enabled = { has: (conv: string) => c.convs.some((x) => { try { return convKey(parseConv(x)) === conv; } catch { return false; } }),
+      list: () => [...new Set(c.convs.map((x) => convKey(parseConv(x))))], get size() { return this.list().length; } };
     const states = new Map<string, ConvState>();
     const stateOf = (conv: string): ConvState => {
       let s = states.get(conv);
@@ -104,7 +106,11 @@ export default definePlugin({
         isPrivate: m.conv.startsWith('private:'), mentioned: m.mentioned && !m.segments.some((x) => x.type === 'poke'),
         poke: m.segments.some((x) => x.type === 'poke'), text: m.text, senderId: m.senderId,
       }, selfNames(m.conv));
-      if (reason) { schedule(s, reason, engineCfg()); ctx.logger.debug(`${m.conv} 触发唤醒：${reason}`); }
+      if (reason) {
+        const had = !!s.pending;
+        schedule(s, reason, engineCfg());
+        if (!had) bridge.activity({ kind: 'trigger', conv: m.conv, actor: m.senderName, title: `触发唤醒：${REASON_LABEL[reason] ?? reason}`, detail: `${c.batchWindowSec} 秒后唤醒（期间的新消息会合并）` });
+      }
       save(m.conv);
     });
 
@@ -114,7 +120,7 @@ export default definePlugin({
       const d = driver();
       if (!d) return;
       const ec = engineCfg();
-      for (const conv of enabled) {
+      for (const conv of enabled.list()) {
         const s = stateOf(conv);
         const reason = tick(s, ec, { busy: d.isBusy(conv) || firing.has(conv), recentSelfSends: Number(recentSelfSends(conv).n) });
         if (!reason) continue;
@@ -122,6 +128,7 @@ export default definePlugin({
         firing.add(conv);
         fire(conv, reason).catch((e) => {
           ctx.logger.warn(`唤醒 ${conv} 失败：${e.message}`);
+          bridge.activity({ kind: 'error', level: 'error', conv, actor: 'DSH', title: '唤醒失败，1 分钟后重试', detail: e.message });
           if (!s.pending) s.pending = { reason, dueAt: Date.now() + 60_000, since: Date.now() }; // 稍后重试，不丢唤醒
         }).finally(() => firing.delete(conv));
       }
@@ -279,9 +286,10 @@ export default definePlugin({
 
     // ------------------------------------------------------------ 主人指令（兼容 qq-bridge 的说法）
     const setEnabled = (conv: string, on: boolean) => {
-      const list = new Set(c.convs.map((x) => convKey(parseConv(x))));
+      const list = new Set(enabled.list());
       if (on) list.add(conv); else list.delete(conv);
-      ctx.saveConfig({ convs: [...list] }); // 保存配置会触发插件重载
+      ctx.saveConfig({ convs: [...list] }); // 立即生效（插件读取实时配置）
+      bridge.activity({ kind: 'info', conv, actor: 'owner', title: on ? '已开启仿真' : '已关闭仿真' });
     };
     const bindRole = (conv: string, role: string | null) => {
       const rest = c.roleBindings.filter((l) => convKey(parseConv(l.split('=>')[0].trim())) !== conv);
@@ -319,7 +327,7 @@ export default definePlugin({
 
     // ------------------------------------------------------------ 控制台接口
     ctx.route('GET', 'convs', () => {
-      const all = new Set([...enabled, ...bridge.store.conversations().slice(0, 50).map((x) => x.conv)]);
+      const all = new Set([...enabled.list(), ...bridge.store.conversations().slice(0, 50).map((x) => x.conv)]);
       const d = driver();
       return [...all].map((conv) => {
         const s = stateOf(conv);
@@ -333,7 +341,7 @@ export default definePlugin({
       switch (params.op) {
         case 'enable': setEnabled(conv, true); break;
         case 'disable': setEnabled(conv, false); break;
-        case 'wake': schedule(s, 'manual', engineCfg()); break;
+        case 'wake': schedule(s, 'manual', engineCfg()); bridge.activity({ kind: 'trigger', conv, actor: 'owner', title: '手动唤醒' }); break;
         case 'reset': await driver()?.reset(conv); states.delete(conv); ctx.kv.delete(`state:${conv}`); break;
         case 'mode': s.mode = body?.mode ?? 'diving'; s.sleepUntil = s.mode === 'sleeping' ? Date.now() + (body?.minutes ?? 30) * 60_000 : 0; s.confirmedBy = 'owner'; save(conv); break;
         case 'role': bindRole(conv, body?.role || null); break;
@@ -346,7 +354,7 @@ export default definePlugin({
     ctx.route('PUT', 'roles/:name', ({ params, body }) => ({ name: roles.save(params.name, String(body?.content ?? '')) }));
     ctx.route('DELETE', 'roles/:name', ({ params }) => { roles.remove(params.name); return { ok: true }; });
     ctx.route('GET', 'preview/:conv', async ({ params }) => ({ prompt: await buildPrompt(convKey(parseConv(params.conv)), 'manual', true) }));
-    ctx.provide({ stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => [...enabled] });
+    ctx.provide({ stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
     if (enabled.size) ctx.logger.info(`仿真已在 ${enabled.size} 个会话启用（驱动：${c.driver}）`);
   },
 });

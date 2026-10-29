@@ -7,7 +7,7 @@ export default definePlugin({
   version: '1.0.0',
   description: '/help 帮助菜单、/状态、主人在 QQ 里管理插件与只读模式',
   config: {
-    helpHeader: { type: 'string', default: '可用命令（前缀 / 或 #，私聊和 @我 时可省略）：', description: '帮助菜单标题' },
+    helpHeader: { type: 'string', default: '可用命令（前缀 / 或 #；群里 @我 时可省略）：', description: '帮助菜单标题' },
   },
   setup(ctx) {
     const host = () => ctx.bridge.pluginHost;

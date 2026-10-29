@@ -76,6 +76,11 @@ CREATE TABLE IF NOT EXISTS audit (
   params TEXT NOT NULL, ok INTEGER NOT NULL, result TEXT NOT NULL, ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_audit_ts ON audit(ts);
+CREATE TABLE IF NOT EXISTS activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, level TEXT NOT NULL DEFAULT 'info',
+  conv TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_activity_ts ON activity(ts);
 CREATE TABLE IF NOT EXISTS kv (ns TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (ns, key));
 `;
 
@@ -283,6 +288,23 @@ export class Store {
     const msg = this.db.prepare('SELECT SUM(is_self = 0) AS recv, SUM(is_self = 1) AS sent FROM messages WHERE ts >= ?').get(sinceTs) as any;
     const tools = this.db.prepare('SELECT COUNT(*) AS calls, SUM(ok = 0) AS failed FROM audit WHERE ts >= ?').get(sinceTs) as any;
     return { recv: Number(msg?.recv ?? 0), sent: Number(msg?.sent ?? 0), toolCalls: Number(tools?.calls ?? 0), toolFailed: Number(tools?.failed ?? 0) };
+  }
+
+  // ---------- 动态 ----------
+  addActivity(a: { kind: string; level?: string; conv?: string; actor?: string; title: string; detail?: unknown }) {
+    const detail = a.detail === undefined ? '' : typeof a.detail === 'string' ? a.detail : JSON.stringify(a.detail);
+    const r = this.db.prepare('INSERT INTO activity (ts, kind, level, conv, actor, title, detail) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(Date.now(), a.kind, a.level ?? 'info', a.conv ?? '', a.actor ?? '', a.title, detail.slice(0, 8000));
+    const id = Number(r.lastInsertRowid);
+    if (id % 500 === 0) this.db.prepare('DELETE FROM activity WHERE id < ?').run(id - 20000);
+    return id;
+  }
+  activities(opts: { conv?: string; kind?: string; before?: number; limit?: number }) {
+    const where: string[] = []; const args: any[] = [];
+    if (opts.conv) { where.push('conv = ?'); args.push(opts.conv); }
+    if (opts.kind) { where.push('kind = ?'); args.push(opts.kind); }
+    if (opts.before) { where.push('id < ?'); args.push(opts.before); }
+    return this.db.prepare(`SELECT * FROM activity ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`).all(...args, opts.limit ?? 200) as any[];
   }
 
   // ---------- 插件 KV ----------

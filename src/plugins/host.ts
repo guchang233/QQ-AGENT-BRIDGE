@@ -408,7 +408,8 @@ export class PluginHost extends EventEmitter {
       if (o.requireMention && base.isGroup && !base.mentioned) continue;
       const e: MessageEvent = Object.create(base);
       if (h.kind === 'command') {
-        const hit = matchCommand(base.text, h.names!, prefixes, base.mentioned || !base.isGroup);
+        // 不带前缀的命令只在群里 @我 时识别；私聊必须带前缀，避免普通聊天（如"你好"）被命令截走
+        const hit = matchCommand(base.text, h.names!, prefixes, base.isGroup && base.mentioned && !base.segments.some((x) => x.type === 'poke'));
         if (!hit) continue;
         Object.defineProperty(e, 'argText', { value: hit.argText });
         Object.defineProperty(e, 'args', { value: hit.argText ? hit.argText.split(/\s+/) : [] });
