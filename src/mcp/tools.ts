@@ -461,82 +461,12 @@ export function buildTools(): ToolDef[] {
     },
   });
 
-  add({
-    name: 'qq_voice_to_text', title: '语音转文字', tier: 'read', readOnly: true,
-    description: '把一条语音消息转成文字。',
-    input: { messageId: msgId },
-    handler: async ({ bridge }, a) => {
-      const r: any = await bridge.bot.call('fetch_ptt_text', { message_id: Number(a.messageId) });
-      return r?.text ?? json(r);
-    },
-  });
-
   // ------------------------------------------------------------------ 表情
   add({
     name: 'qq_search_face', title: '搜索 QQ 表情', tier: 'read', readOnly: true,
     description: '按名字搜索 QQ 系统小黄脸表情，得到可用于 [face:名字] 的表情。',
     input: { query: z.string().default('') },
     handler: async ({ bridge }, a) => bridge.faces.search(a.query, 60).map((f) => `${f.id}:${f.name}`).join('  ') || '无匹配',
-  });
-
-  add({
-    name: 'qq_list_stickers', title: '表情包库', tier: 'read', readOnly: true,
-    description: '列出/搜索本地表情包库（收藏的梗图）。preview=true 时附带缩略图让你看到内容。用 qq_send_sticker 或 [sticker:ID] 发送。',
-    input: { query: z.string().default(''), limit: z.number().int().min(1).max(100).default(30), preview: z.boolean().default(false) },
-    handler: async ({ bridge }, a) => {
-      const list = bridge.store.findStickers(a.query, a.limit);
-      if (!list.length) return { content: [{ type: 'text', text: '表情包库为空或无匹配。可用 qq_collect_sticker 收藏聊天里的图片。' }] } as ToolResult;
-      const content: ToolContent[] = [{ type: 'text', text: list.map((s) => `#${s.id} ${s.remark || '(无备注)'}${s.tags ? ` [${s.tags}]` : ''} 用过${s.uses}次`).join('\n') }];
-      if (a.preview) for (const s of list.slice(0, 8)) {
-        try {
-          const buf = fs.readFileSync(s.path);
-          if (buf.length <= 1024 * 1024) { content.push({ type: 'text', text: `#${s.id}` }); content.push({ type: 'image', data: buf.toString('base64'), mimeType: s.mime }); }
-        } catch { /* ignore */ }
-      }
-      return { content };
-    },
-  });
-
-  add({
-    name: 'qq_collect_sticker', title: '收藏表情包', tier: 'send',
-    description: '把一张图片收藏进表情包库（来源：图片引用 #xxxx / 路径 / URL），请写清备注方便以后检索。',
-    input: { source: z.string(), remark: z.string().max(40).default(''), tags: z.string().default('').describe('逗号分隔标签') },
-    handler: async ({ bridge }, a) => {
-      const s = await bridge.collectSticker(a.source, a.remark, a.tags, 'agent');
-      return `已收藏为表情包 #${s.id}${s.remark ? `（${s.remark}）` : ''}`;
-    },
-  });
-
-  add({
-    name: 'qq_update_sticker', title: '编辑表情包', tier: 'send',
-    description: '修改表情包备注/标签，或删除。',
-    input: { id: z.number().int(), remark: z.string().max(40).optional(), tags: z.string().optional(), delete: z.boolean().default(false) },
-    handler: async ({ bridge }, a) => {
-      if (a.delete) { bridge.store.deleteSticker(a.id); return `已删除 #${a.id}`; }
-      bridge.store.updateSticker(a.id, { remark: a.remark, tags: a.tags });
-      return '已更新';
-    },
-  });
-
-  add({
-    name: 'qq_send_sticker', title: '发送表情包', tier: 'send', selfAudited: true,
-    description: '从表情包库发送表情（ID 或备注关键词）。',
-    input: { conv, sticker: z.string().describe('表情包 ID 或备注关键词'), replyTo: msgId.optional() },
-    handler: async ({ bridge, caller }, a) => {
-      const r = await bridge.send(caller, a.conv, `[sticker:${a.sticker}]`, { replyTo: a.replyTo });
-      return `表情包已发送，消息 ID：${r.messageIds.join(', ')}`;
-    },
-  });
-
-  add({
-    name: 'qq_list_qq_favorites', title: 'QQ 收藏表情', tier: 'read', readOnly: true,
-    description: '列出 QQ 账号自带的收藏表情（返回图片 URL，可用 [image:URL|sticker] 发送或收藏进本地库）。',
-    input: { count: z.number().int().min(1).max(200).default(48) },
-    handler: async ({ bridge }, a) => {
-      const r: any = await bridge.bot.call('fetch_custom_face', { count: a.count });
-      const list: any[] = Array.isArray(r) ? r : r?.list ?? r?.faces ?? [];
-      return list.map((x: any, i: number) => (typeof x === 'string' ? `${i + 1}. ${x}` : `${i + 1}. ${x.desc ?? x.name ?? ''} ${x.url ?? x.file ?? ''}`)).join('\n') || json(r);
-    },
   });
 
   add({
@@ -783,20 +713,6 @@ export function buildTools(): ToolDef[] {
   });
 
   // ------------------------------------------------------------------ 记忆
-  add({
-    name: 'qq_memory', title: '长期记忆', tier: 'read',
-    description: '持久化笔记：记住群友特点、约定、待办等。scope 建议用会话 ID 或 user:<QQ>，也可用 global。op: set 写入 / get 读取 / delete 删除 / search 搜索。',
-    input: { op: z.enum(['set', 'get', 'delete', 'search']), scope: z.string().default('global'), key: z.string().optional(), value: z.string().max(4000).optional(), query: z.string().optional() },
-    handler: async ({ bridge }, a) => {
-      if (a.op === 'set') { if (!a.key || a.value === undefined) throw new Error('set 需要 key 和 value'); bridge.store.memSet(a.scope, a.key, a.value); return '已记住'; }
-      if (a.op === 'delete') { if (!a.key) throw new Error('需要 key'); return bridge.store.memDel(a.scope, a.key) ? '已删除' : '不存在'; }
-      const list = a.op === 'get' && a.key
-        ? bridge.store.memList(a.scope).filter((m) => m.key === a.key)
-        : bridge.store.memList(a.op === 'search' && !a.scope ? undefined : a.scope === 'global' && a.op === 'search' ? undefined : a.scope, a.query);
-      return list.map((m) => `[${m.scope}] ${m.key} = ${m.value}`).join('\n') || '无记录';
-    },
-  });
-
   // ------------------------------------------------------------------ 通用兜底
   add({
     name: 'qq_list_actions', title: '搜索 OneBot 动作', tier: 'read', readOnly: true,

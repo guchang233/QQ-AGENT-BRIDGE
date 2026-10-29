@@ -1,6 +1,0 @@
-{
-  "name": "keyword-reply",
-  "displayName": "关键词回复",
-  "version": "1.0.0",
-  "description": "消息包含关键词时自动回复（在控制台插件页配置规则）"
-}

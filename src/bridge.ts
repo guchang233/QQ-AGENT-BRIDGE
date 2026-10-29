@@ -42,6 +42,8 @@ export class Bridge extends EventEmitter {
   friends = new Map<string, { id: string; nickname: string; remark: string }>();
   startedAt = Date.now();
   dataDir: string;
+  /** 插件宿主（由 PluginHost 构造时挂载） */
+  pluginHost?: import('./plugins/host.ts').PluginHost;
 
   constructor(config?: Config) {
     super();
@@ -437,14 +439,14 @@ export class Bridge extends EventEmitter {
   // ======================================================================
   // 表情包库
   // ======================================================================
-  async collectSticker(src: string, remark = '', tags = '', source = '') {
+  async collectSticker(src: string, remark = '', tags = '', source = '', extra: { note?: string; emoji_id?: string; url?: string } = {}) {
     const buf = await this.media.readSource(src);
     const mime = guessMime(buf);
     if (!mime.startsWith('image/')) throw new Error(`不是图片（${mime}）`);
     const sha = sha256(buf);
     const p = path.join(this.media.stickerDir(), `${sha.slice(0, 16)}${MIME_EXT[mime] ?? '.img'}`);
     if (!fs.existsSync(p)) atomicWrite(p, buf);
-    return this.store.addSticker({ sha, path: p, mime, remark, tags, source });
+    return this.store.addSticker({ sha, path: p, mime, remark: oneLine(remark, 40), tags: oneLine(tags, 120), source, note: oneLine(extra.note ?? '', 200), emoji_id: extra.emoji_id, url: extra.url });
   }
 
   status() {
@@ -475,6 +477,18 @@ function eventTs(time: number | undefined, historical: boolean) {
   return !historical && Math.abs(now - t) < 5000 ? now : t;
 }
 
+/**
+ * 单行化 + 截断：表情备注/笔记会被展示给模型，压平换行与控制字符，
+ * 防止有人借备注伪造"系统段落"进行提示词注入。
+ */
+// 用码点构造，避免源码里出现不可见字符
+const cp = (a: number, b?: number) => (b === undefined ? String.fromCharCode(a) : `${String.fromCharCode(a)}-${String.fromCharCode(b)}`);
+const WS_RE = new RegExp(`[\\s${cp(0xa0)}${cp(0x3000)}]+`, 'g');
+const CTRL_RE = new RegExp(`[${cp(0, 0x1f)}${cp(0x7f, 0x9f)}${cp(0x200b, 0x200f)}${cp(0x2028, 0x2029)}${cp(0xfeff)}]`, 'g');
+export function oneLine(v: string, max: number) {
+  const s = String(v ?? '').replace(WS_RE, ' ').replace(CTRL_RE, '').trim();
+  return [...s].slice(0, max).join('');
+}
 function mergeText(segs: Segment[]): Segment[] {
   const out: Segment[] = [];
   for (const s of segs) {

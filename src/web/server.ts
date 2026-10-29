@@ -236,8 +236,6 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     bridge.requests.delete(r.flag);
     return { ok: true };
   });
-  app.get('/api/memory', async (req) => bridge.store.memList((req.query as any).scope || undefined, (req.query as any).q || undefined, 500));
-  app.delete('/api/memory', async (req) => ({ ok: bridge.store.memDel(String((req.query as any).scope), String((req.query as any).key)) }));
 
   // ------------------------------------------------------------------ 插件
   app.get('/api/plugins', async () => plugins.list());
@@ -255,6 +253,16 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     plugins.saveConfig(name, req.body as any);
     if (plugins.plugins.get(name)?.loaded && plugins.plugins.get(name)?.kind === 'native') await plugins.reload(name);
     return { ok: true };
+  });
+
+  // 插件自定义接口：/api/p/<插件名>/<路径>
+  app.all('/api/p/:plugin/*', async (req, reply) => {
+    const { plugin } = req.params as { plugin: string };
+    const sub = (req.params as any)['*'] as string;
+    const hit = plugins.findRoute(plugin, req.method, sub);
+    if (!hit) return reply.code(404).send({ error: `插件 ${plugin} 没有接口 ${req.method} ${sub}` });
+    const r = await hit.route.handler({ query: (req.query ?? {}) as Record<string, string>, body: req.body, params: hit.params });
+    return r ?? { ok: true };
   });
 
   app.get('/api/logs', async () => logHub.ring.slice(-500));

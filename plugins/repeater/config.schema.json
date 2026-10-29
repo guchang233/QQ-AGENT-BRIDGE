@@ -1,4 +1,0 @@
-{
-  "threshold": { "type": "int", "description": "连续多少人发送相同内容后复读", "default": 3 },
-  "probability": { "type": "float", "description": "达到阈值后复读的概率 0~1", "default": 1 }
-}

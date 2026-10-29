@@ -86,7 +86,12 @@ export const ConfigSchema = z.object({
   }).prefault({}),
   plugins: z.object({
     dir: z.string().default('plugins'),
+    /** 显式开关（覆盖插件的 defaultEnabled） */
+    overrides: z.record(z.string(), z.boolean()).default({}),
+    /** 旧版停用列表（兼容） */
     disabled: z.array(z.string()).default([]),
+    /** 用户插件文件变化时自动重载 */
+    hotReload: z.boolean().default(true),
     /** 命令前缀 */
     commandPrefixes: z.array(z.string()).default(['/', '#']),
     astrbot: z.object({

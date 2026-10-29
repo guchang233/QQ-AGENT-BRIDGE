@@ -186,7 +186,7 @@ describe('审批与媒体', () => {
     expect(r.content[0].type).toBe('image');
     expect(r.content[0].mimeType).toBe('image/png');
     const c = await client.callTool({ name: 'qq_collect_sticker', arguments: { source: ref, remark: '测试图' } });
-    expect(text(c)).toMatch(/表情包 #\d+/);
+    expect(text(c)).toMatch(/已收藏：#\d+/);
     mock.calls.length = 0;
     await client.callTool({ name: 'qq_send_sticker', arguments: { conv: 'group:111', sticker: '测试图' } });
     const sent = mock.calls.find((x) => x.action === 'send_group_msg')!;
@@ -202,19 +202,62 @@ describe('审批与媒体', () => {
 });
 
 describe('插件', () => {
-  it('示例插件响应命令', async () => {
+  it('用户插件响应命令', async () => {
     mock.calls.length = 0;
-    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '/echo 你好呀' } }]);
+    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '/hello 小红' } }]);
     await waitFor(() => mock.calls.some((c) => c.action === 'send_group_msg'));
     const call = mock.calls.find((c) => c.action === 'send_group_msg')!;
-    expect(JSON.stringify(call.params.message)).toContain('你好呀');
+    expect(JSON.stringify(call.params.message)).toContain('你好呀，小红');
+  });
+
+  it('/help 汇总所有插件命令', async () => {
+    mock.calls.length = 0;
+    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '/help' } }]);
+    await waitFor(() => mock.calls.some((c) => c.action === 'send_group_msg'));
+    const t = JSON.stringify(mock.calls.find((c) => c.action === 'send_group_msg')!.params.message);
+    expect(t).toContain('/提醒');
+    expect(t).toContain('/表情包');
   });
 
   it('插件注册的工具出现在 MCP 中', async () => {
     const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).toContain('example_roll_dice');
-    const r = await client.callTool({ name: 'example_roll_dice', arguments: { sides: 6 } });
+    for (const n of ['hello_roll_dice', 'qq_memory_remember', 'qq_speak', 'qq_schedule', 'qq_send_sticker', 'qq_group_stats']) expect(names).toContain(n);
+    const r = await client.callTool({ name: 'hello_roll_dice', arguments: { sides: 6 } });
     expect(Number(text(r).match(/\d+/)![0])).toBeGreaterThanOrEqual(1);
+  });
+
+  it('默认关闭的系统插件未加载', () => {
+    const st = bridge.pluginHost!.plugins.get('guard')!;
+    expect(st.system).toBe(true);
+    expect(st.loaded).toBe(false);
+  });
+});
+
+describe('系统插件', () => {
+  it('记忆：写入、合并、回忆、会话上下文', async () => {
+    const a = await client.callTool({ name: 'qq_memory_remember', arguments: { content: '小明喜欢吃火锅和烧烤', subject: '20001', kind: 'preference', importance: 4 } });
+    expect(text(a)).toMatch(/已记住 #\d+/);
+    const b = await client.callTool({ name: 'qq_memory_remember', arguments: { content: '小明喜欢吃火锅和烧烤！', subject: '20001', kind: 'preference' } });
+    expect(text(b)).toContain('合并');
+    const r = await client.callTool({ name: 'qq_memory_recall', arguments: { query: '火锅' } });
+    expect(text(r)).toContain('小明喜欢吃火锅');
+    const c = await client.callTool({ name: 'qq_memory_context', arguments: { conv: 'group:111' } });
+    expect(text(c)).toContain('火锅');
+  });
+
+  it('定时：安排并触发', async () => {
+    mock.calls.length = 0;
+    const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });
+    expect(text(r)).toContain('已安排');
+    await waitFor(() => mock.calls.some((c) => c.action === 'send_group_msg' && JSON.stringify(c.params.message).includes('定时测试')), 15000);
+  }, 20000);
+
+  it('插件 HTTP 接口', async () => {
+    const base = `http://127.0.0.1:${PORT}`;
+    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'secret123' }) });
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const o = await (await fetch(`${base}/api/p/memory/overview`, { headers: { cookie } })).json();
+    expect(o.total).toBeGreaterThan(0);
   });
 });
 

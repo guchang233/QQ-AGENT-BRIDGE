@@ -38,6 +38,12 @@ export interface MediaRow {
 
 export interface StickerRow {
   id: number; sha: string; path: string; mime: string; remark: string; tags: string; uses: number; ts: number; source: string;
+  /** AI 对这张图的理解（看图后记录） */
+  note: string;
+  /** 来自 QQ 收藏表情时的 emoji_id */
+  emoji_id: string;
+  url: string;
+  last_used: number;
 }
 
 const SCHEMA = `
@@ -81,6 +87,16 @@ export class Store {
     this.db = new DatabaseSync(path.join(dataDir, 'qab.db'));
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /** 旧库增量迁移：缺列则补。 */
+  private migrate() {
+    const cols = (t: string) => new Set((this.db.prepare(`PRAGMA table_info(${t})`).all() as any[]).map((c) => c.name));
+    const st = cols('stickers');
+    for (const [c, def] of [['note', "TEXT NOT NULL DEFAULT ''"], ['emoji_id', "TEXT NOT NULL DEFAULT ''"], ['url', "TEXT NOT NULL DEFAULT ''"], ['last_used', 'INTEGER NOT NULL DEFAULT 0']] as const) {
+      if (!st.has(c)) this.db.exec(`ALTER TABLE stickers ADD COLUMN ${c} ${def}`);
+    }
   }
 
   close() { this.db.close(); }
@@ -97,6 +113,11 @@ export class Store {
         last_ts = MAX(conversations.last_ts, excluded.last_ts)`).run(m.conv, seq, m.ts);
     if (m.isSelf) this.markRead(m.conv, seq);
     return { ...m, seq };
+  }
+
+  /** 更新消息的可读文本（如追加语音转写结果）。 */
+  setMessageText(conv: string, msgId: string, text: string) {
+    this.db.prepare('UPDATE messages SET text = ? WHERE conv = ? AND msg_id = ?').run(text, conv, msgId);
   }
 
   markRecalled(conv: string, msgId: string) {
@@ -206,26 +227,32 @@ export class Store {
   }
 
   // ---------- 表情包库 ----------
-  addSticker(s: Omit<StickerRow, 'id' | 'uses' | 'ts'>): StickerRow {
-    const ex = this.db.prepare('SELECT * FROM stickers WHERE sha = ?').get(s.sha) as StickerRow | undefined;
+  addSticker(s: Pick<StickerRow, 'sha' | 'path' | 'mime' | 'remark' | 'tags' | 'source'> & Partial<Pick<StickerRow, 'note' | 'emoji_id' | 'url'>>): StickerRow & { existed?: boolean } {
+    const ex = this.db.prepare("SELECT * FROM stickers WHERE sha = ? OR (emoji_id <> '' AND emoji_id = ?)").get(s.sha, s.emoji_id ?? '') as StickerRow | undefined;
     if (ex) {
-      if (s.remark && !ex.remark) this.db.prepare('UPDATE stickers SET remark = ? WHERE id = ?').run(s.remark, ex.id);
-      return { ...ex, remark: ex.remark || s.remark };
+      // 不覆盖已有认知，只补空字段
+      this.db.prepare(`UPDATE stickers SET remark = CASE WHEN remark = '' THEN ? ELSE remark END, emoji_id = CASE WHEN emoji_id = '' THEN ? ELSE emoji_id END,
+        url = CASE WHEN url = '' THEN ? ELSE url END WHERE id = ?`).run(s.remark, s.emoji_id ?? '', s.url ?? '', ex.id);
+      return { ...this.getSticker(ex.id)!, existed: true };
     }
-    const r = this.db.prepare('INSERT INTO stickers (sha, path, mime, remark, tags, ts, source) VALUES (?, ?, ?, ?, ?, ?, ?)').run(s.sha, s.path, s.mime, s.remark, s.tags, Date.now(), s.source);
+    const r = this.db.prepare('INSERT INTO stickers (sha, path, mime, remark, tags, ts, source, note, emoji_id, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(s.sha, s.path, s.mime, s.remark, s.tags, Date.now(), s.source, s.note ?? '', s.emoji_id ?? '', s.url ?? '');
     return this.getSticker(Number(r.lastInsertRowid))!;
   }
   getSticker(id: number): StickerRow | undefined { return this.db.prepare('SELECT * FROM stickers WHERE id = ?').get(id) as StickerRow | undefined; }
   findStickers(q = '', limit = 50): StickerRow[] {
     if (!q.trim()) return this.db.prepare('SELECT * FROM stickers ORDER BY uses DESC, id DESC LIMIT ?').all(limit) as unknown as StickerRow[];
-    const like = `%${q.trim()}%`;
-    return this.db.prepare('SELECT * FROM stickers WHERE remark LIKE ? OR tags LIKE ? ORDER BY uses DESC, id DESC LIMIT ?').all(like, like, limit) as unknown as StickerRow[];
+    // 多关键词：每个词都要命中备注/笔记/标签之一
+    const words = q.trim().split(/\s+/).slice(0, 5);
+    const where = words.map(() => '(remark LIKE ? OR note LIKE ? OR tags LIKE ?)').join(' AND ');
+    const args = words.flatMap((w) => [`%${w}%`, `%${w}%`, `%${w}%`]);
+    return this.db.prepare(`SELECT * FROM stickers WHERE ${where} ORDER BY uses DESC, id DESC LIMIT ?`).all(...args, limit) as unknown as StickerRow[];
   }
-  updateSticker(id: number, patch: { remark?: string; tags?: string }) {
-    if (patch.remark !== undefined) this.db.prepare('UPDATE stickers SET remark = ? WHERE id = ?').run(patch.remark, id);
-    if (patch.tags !== undefined) this.db.prepare('UPDATE stickers SET tags = ? WHERE id = ?').run(patch.tags, id);
+  updateSticker(id: number, patch: { remark?: string; tags?: string; note?: string }) {
+    for (const k of ['remark', 'tags', 'note'] as const) if (patch[k] !== undefined) this.db.prepare(`UPDATE stickers SET ${k} = ? WHERE id = ?`).run(patch[k]!, id);
   }
-  bumpSticker(id: number) { this.db.prepare('UPDATE stickers SET uses = uses + 1 WHERE id = ?').run(id); }
+  bumpSticker(id: number) { this.db.prepare('UPDATE stickers SET uses = uses + 1, last_used = ? WHERE id = ?').run(Date.now(), id); }
+  countStickers(): number { return Number((this.db.prepare('SELECT COUNT(*) AS n FROM stickers').get() as any).n); }
   deleteSticker(id: number) { this.db.prepare('DELETE FROM stickers WHERE id = ?').run(id); }
 
   // ---------- 记忆 ----------
