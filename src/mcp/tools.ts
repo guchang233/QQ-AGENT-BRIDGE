@@ -60,6 +60,15 @@ async function resolveFaceId(bridge: Bridge, emoji: string): Promise<string> {
   throw new Error(`未知表情「${emoji}」，可用 qq_search_face 查询`);
 }
 
+/** QQ 空间 feed 的 html 片段 → 纯文本正文 + 配图（去掉头像、表情等装饰图）。 */
+export function qzoneHtmlToText(html: string): { text: string; images: string[] } {
+  const body = html.match(/<div class="f-info[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? html.match(/<div class="f-single-content[^"]*"[^>]*>([\s\S]*)/)?.[1] ?? html;
+  const text = body.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim().slice(0, 500);
+  const images = [...html.matchAll(/<img[^>]+src="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&')).filter((u) => !/qlogo|gdtimg|gtimg\.cn\/141|\/qzone\/em\/|qzonestyle|\.gif$/.test(u));
+  return { text, images: [...new Set(images)] };
+}
+
 export function buildTools(): ToolDef[] {
   const T: ToolDef[] = [];
   const add = (t: ToolDef) => T.push(t);
@@ -472,7 +481,7 @@ export function buildTools(): ToolDef[] {
 
   add({
     name: 'qq_react', title: '表情回应', tier: 'send',
-    description: '给消息贴一个表情回应（贴表情）。emoji 可以是 QQ 表情名/ID，或 emoji 字符如 👍。',
+    description: '给群消息贴一个表情回应（贴表情；QQ 不支持对私聊消息贴表情）。emoji 可以是 QQ 表情名/ID，或 emoji 字符如 👍。',
     input: { messageId: msgId, emoji: z.string(), remove: z.boolean().default(false) },
     handler: async ({ bridge }, a) => {
       const emojiId = await resolveFaceId(bridge, a.emoji);
@@ -502,7 +511,18 @@ export function buildTools(): ToolDef[] {
     name: 'qq_qzone_feeds', title: 'QQ空间好友动态', tier: 'read', readOnly: true,
     description: '查看 QQ 空间好友动态（说说流）。',
     input: { count: z.number().int().min(1).max(50).default(10), page: z.number().int().min(1).default(1) },
-    handler: async ({ bridge }, a) => json(await bridge.bot.call('get_qzone_feeds', { count: a.count, page_num: a.page })),
+    handler: async ({ bridge }, a) => {
+      const r: any = await bridge.bot.call('get_qzone_feeds', { count: a.count, page_num: a.page });
+      const feeds: any[] = r?.feeds ?? r?.list ?? (Array.isArray(r) ? r : []);
+      const real = feeds.filter((f) => !String(f.key ?? f.tid ?? '').startsWith('advertisement'));
+      if (!real.length) return '没有动态';
+      return real.map((f) => {
+        const { text, images } = f.html ? qzoneHtmlToText(String(f.html)) : { text: String(f.content ?? f.con ?? ''), images: [] as string[] };
+        const when = f.time ? fmtTime(Number(f.time) * 1000) : '';
+        const nick = String(f.nickname ?? '').replace(/\[em\][^[]*\[\/em\]/g, '').trim();
+        return `tid=${f.key ?? f.tid ?? ''} [${when}] ${nick || f.uin}(${f.uin}): ${text || '（无文字）'}${images.length ? ` 图片：${images.slice(0, 9).join(' ')}` : ''}`;
+      }).join(String.fromCharCode(10));
+    },
   });
 
   add({

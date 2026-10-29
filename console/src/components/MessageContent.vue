@@ -6,7 +6,7 @@ const props = defineProps<{ text: string; onQuote?: (id: string) => void }>();
 const emit = defineEmits<{ (e: 'quote', id: string): void }>();
 
 type Part = { kind: 'text' | 'image' | 'face' | 'tag' | 'reply' | 'at'; text: string; ref?: string; sticker?: boolean };
-const RE = /\[(图片表情|图片|语音|视频|文件|表情|大表情|回复|合并转发|卡片|戳一戳|骰子|猜拳|链接|音乐分享|位置|Markdown|推荐好友|推荐群)(?:#([0-9a-zA-Z]+))?(?::([^\]]*))?\]|@(?:我|全体成员|[^\s(]+\(\d+\)|\d+) /g;
+const RE = /\[(图片表情|图片|语音|视频|文件|表情|大表情|回复|合并转发|卡片|戳一戳|骰子|猜拳|链接|音乐分享|位置|Markdown|推荐好友|推荐群)(?:#(-?[0-9a-zA-Z]+))?(?::([^\]]*))?\]|@(?:我|全体成员|[^\s(]+\(\d+\)|\d+) /g;
 
 const parts = computed<Part[]>(() => {
   const out: Part[] = [];
