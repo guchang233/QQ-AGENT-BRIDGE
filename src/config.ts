@@ -44,8 +44,10 @@ export const ConfigSchema = z.object({
     consolePassword: z.string().default(''),
     sessionSecret: z.string().default(''),
   }).prefault({}),
-  /** 主人 QQ：插件 owner 权限、审批通知 */
+  /** 管理员 QQ（可多个）：只有他们的指令会被执行；按 QQ 号辨认，不看昵称 */
   owners: idList,
+  /** 对管理员的称呼（提示词里使用，例如 管理员 / 管理员 / 老板） */
+  ownerTitle: z.string().default('管理员'),
   access: z.object({
     /** allowlist：只处理白名单会话；all：处理全部（黑名单除外） */
     mode: z.enum(['allowlist', 'all']).default('all'),

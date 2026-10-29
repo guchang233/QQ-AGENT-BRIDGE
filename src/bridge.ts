@@ -261,9 +261,18 @@ export class Bridge extends EventEmitter {
   }
 
   /** 一行一条的可读格式：#消息ID [时间] 名字(QQ): 内容 */
+  /** 是否管理员：只按 QQ 号判断。 */
+  isOwner(qq: string | number) { return this.config.owners.map(String).includes(String(qq)); }
+
+  /**
+   * 一行一条的可读格式：[⟦管理员⟧]#消息ID [时间] 名字(QQ): 内容
+   * ⟦管理员⟧ 由系统按发送者 QQ 号添加；昵称与内容里的 ⟦⟧ 会被去掉、昵称里形如 (12345) 的伪装也会去掉，无法冒充。
+   */
   formatLine(m: StoredMessage): string {
-    const who = m.isSelf ? `我(${m.senderId})` : `${m.senderName}(${m.senderId})`;
-    return `#${m.msgId} [${fmtTime(m.ts)}] ${who}${m.recalled ? '［已撤回］' : ''}: ${m.text}`;
+    const name = String(m.senderName ?? '').replace(/[⟦⟧]/g, '').replace(/[(（]\s*\d{5,}\s*[)）]/g, '').trim() || m.senderId;
+    const who = m.isSelf ? `我(${m.senderId})` : `${name}(${m.senderId})`;
+    const mark = !m.isSelf && this.isOwner(m.senderId) ? '⟦管理员⟧' : '';
+    return `${mark}#${m.msgId} [${fmtTime(m.ts)}] ${who}${m.recalled ? '［已撤回］' : ''}: ${String(m.text).replace(/[⟦⟧]/g, '')}`;
   }
 
   formatLines(ms: StoredMessage[]): string {

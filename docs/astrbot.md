@@ -29,7 +29,7 @@ QQ-Agent Bridge 可以运行**常用的 AstrBot 插件**：用 Python 子进程�
 | `context.llm_generate`、`event.request_llm`、`text_to_image`、`html_render` | ❌ 抛出明确错误 |
 | 平台适配器、WebUI 扩展 | ❌ |
 
-唤醒规则与 AstrBot 一致：带前缀（默认使用本项目的 `commandPrefixes`，即 `/` `#`）、@机器人、或私聊。主人（`owners`）视为 AstrBot 管理员。
+唤醒规则与 AstrBot 一致：带前缀（默认使用本项目的 `commandPrefixes`，即 `/` `#`）、@机器人、或私聊。管理员（`owners`）视为 AstrBot 管理员。
 
 ## 实现
 

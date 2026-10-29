@@ -21,7 +21,7 @@ export const REASON_LABEL: Record<string, string> = {
   private: '私聊新消息', poke: '有人戳了你', atMention: '有人 @ 你或回复了你', question: '有人在问问题', speaker: '你关注的人说话了',
   nameMention: '有人提到了你的名字', keyword: '出现了你关注的关键词', anyMessage: '群里有新消息（你处于活跃状态）',
   replyCheck: '你刚说过话，回来看看有没有人接', timeout: '沉睡结束，回来看看', probability: '你随手刷了一下群', proactive: '群里安静了一阵，你可以考虑主动开个话题（也可以不说）',
-  manual: '主人手动唤醒', bootstrap: '你刚加入这个会话，先熟悉一下',
+  manual: '管理员手动唤醒', bootstrap: '你刚加入这个会话，先熟悉一下',
 };
 
 export interface Triggers {

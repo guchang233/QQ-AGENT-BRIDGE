@@ -7,7 +7,7 @@ const msg = useMessage();
 const dir = ref('');
 const det = ref<any>(null);
 const opts = ref({ config: true, roles: true, social: true, stickers: true, memory: true, usage: true, slang: true });
-const LABEL: Record<string, string> = { config: '主配置（白名单/主人/DSH 模型/节奏/价目）', roles: '人格卡', social: '仿真参数与各会话唤醒状态', stickers: '表情包备注与理解', memory: '话题/想法/成员印象 → 记忆', usage: 'Token 用量历史', slang: '黑话（暂存）' };
+const LABEL: Record<string, string> = { config: '主配置（白名单/管理员/DSH 模型/节奏/价目）', roles: '人格卡', social: '仿真参数与各会话唤醒状态', stickers: '表情包备注与理解', memory: '话题/想法/成员印象 → 记忆', usage: 'Token 用量历史', slang: '黑话（暂存）' };
 const running = ref(false);
 const report = ref<any>(null);
 

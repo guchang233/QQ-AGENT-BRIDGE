@@ -1,19 +1,19 @@
 import { definePlugin } from '../../sdk.ts';
 
-/** 自动处理好友申请 / 加群申请 / 入群邀请（按规则），并通知主人。 */
+/** 自动处理好友申请 / 加群申请 / 入群邀请（按规则），并通知管理员。 */
 export default definePlugin({
   name: 'requests',
   displayName: '请求自动处理',
   version: '1.0.0',
-  description: '按规则自动同意/拒绝好友申请与加群请求，并私聊通知主人',
+  description: '按规则自动同意/拒绝好友申请与加群请求，并私聊通知管理员',
   defaultEnabled: false,
   config: {
     friend: { type: 'select', options: ['manual', 'approve', 'reject', 'keyword'], default: 'manual', description: '好友申请：manual 人工 / approve 全部同意 / reject 全部拒绝 / keyword 附言含关键词则同意' },
     friendKeywords: { type: 'list', default: [], description: '好友申请同意关键词' },
     groupJoin: { type: 'select', options: ['manual', 'approve', 'keyword'], default: 'manual', description: '他人申请加入我管理的群' },
     groupJoinKeywords: { type: 'list', default: [], description: '加群申请同意关键词' },
-    groupInvite: { type: 'select', options: ['manual', 'owner', 'approve', 'reject'], default: 'owner', description: '被邀请入群：owner 仅主人邀请时同意' },
-    notifyOwner: { type: 'bool', default: true, description: '私聊通知主人处理结果' },
+    groupInvite: { type: 'select', options: ['manual', 'owner', 'approve', 'reject'], default: 'owner', description: '被邀请入群：owner 仅管理员邀请时同意' },
+    notifyOwner: { type: 'bool', default: true, description: '私聊通知管理员处理结果' },
   },
   setup(ctx) {
     const c = ctx.config;

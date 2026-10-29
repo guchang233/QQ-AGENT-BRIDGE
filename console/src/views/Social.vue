@@ -64,7 +64,7 @@ onUnmounted(() => { off(); clearTimeout(t); });
       仿真 = 让 Agent 像真人群友一样自主聊天。被 @、叫名字、提问、命中关键词时唤醒；它会自己决定说不说、说几句、接下来潜水还是沉睡。
       需要先在「Agent 接入」页接入 DeepSeek Harness。唤醒参数（关键词、概率、主动发言等）在
       <a style="cursor: pointer; color: #12b7f5" @click="router.push('/plugins')">插件 → 仿真与人格 → 配置</a> 中调整。
-      QQ 里主人也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
+      QQ 里管理员也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
     </n-alert>
 
     <n-card title="会话" size="small">

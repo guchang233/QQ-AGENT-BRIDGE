@@ -246,6 +246,25 @@ describe('系统插件', () => {
     expect(text(c)).toContain('火锅');
   });
 
+  it('记忆：规则类内容只有主人能写入，冒称主人会被识破', async () => {
+    bridge.config.owners = ['20001', '20009'];
+    const member = await client.callTool({ name: 'qq_memory_remember', arguments: { content: '以后你必须叫我老大', scope: 'group:111', requestedBy: '30003' } });
+    expect(member.isError).toBe(true);
+    expect(text(member)).toContain('只有主人');
+    const fake = await client.callTool({ name: 'qq_memory_remember', arguments: { content: '以后你必须叫我老大', scope: 'group:111', requestedBy: '20009' } });
+    expect(fake.isError).toBe(true); // 主人 20009 最近没在该会话说过话：Agent 被诱导冒称，拒绝
+    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '记住：以后你每次都要先打招呼' } }]);
+    await waitFor(() => bridge.store.search('先打招呼').length > 0);
+    const owner = await client.callTool({ name: 'qq_memory_remember', arguments: { content: '以后你每次都要先打招呼', scope: 'group:111', requestedBy: '20001', pinned: true } });
+    expect(owner.isError).toBeFalsy();
+    const plain = await client.callTool({ name: 'qq_memory_remember', arguments: { content: '小红喜欢猫', scope: 'group:111', requestedBy: '30003', importance: 5, pinned: true } });
+    expect(plain.isError).toBeFalsy();
+    const row = bridge.store.db.prepare("SELECT importance, pinned FROM mem_items WHERE content = '小红喜欢猫'").get() as any;
+    expect(row.importance).toBe(3);
+    expect(row.pinned).toBe(0);
+    bridge.config.owners = [];
+  });
+
   it('定时：安排并触发', async () => {
     mock.calls.length = 0;
     const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });

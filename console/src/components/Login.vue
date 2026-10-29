@@ -88,7 +88,7 @@ onMounted(() => { if (state.setupRequired) runDiscover(); });
 
       <div v-else-if="step === 2">
         <n-form label-placement="top">
-          <n-form-item label="主人 QQ（拥有插件管理命令权限，可多个，回车添加）">
+          <n-form-item label="管理员 QQ（拥有插件管理命令权限，可多个，回车添加）">
             <n-dynamic-tags v-model:value="form.owners" />
           </n-form-item>
           <n-form-item label="会话范围">

@@ -6,7 +6,7 @@
 
 ## 基础管理（`admin`）
 
-/help 帮助菜单、/状态、主人在 QQ 里管理插件与只读模式
+/help 帮助菜单、/状态、管理员在 QQ 里管理插件与只读模式
 
 **命令**
 
@@ -20,7 +20,7 @@
 
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `helpHeader` | string | `"可用命令（前缀 / 或 #，私聊和 @我 时可省略）："` | 帮助菜单标题 |
+| `helpHeader` | string | `"可用命令（前缀 / 或 #；群里 @我 时可省略）："` | 帮助菜单标题 |
 
 ## 刷屏防护（`guard`） · 默认关闭
 
@@ -62,6 +62,7 @@
 **命令**
 
 - `/记住 <内容>` — 让机器人记住一件事
+- `/规则 [列表|全局 <内容>|删除 <ID>|<内容>]` — 管理员设定规则（AI 必须遵守）
 - `/回忆 [关键词]` — 检索记忆
 - `/忘记 <ID>` — 归档一条记忆
 
@@ -84,7 +85,9 @@
 | `embedBaseUrl` | string | `"https://api.openai.com/v1"` |  |
 | `embedApiKey` | secret | `""` |  |
 | `embedModel` | string | `"text-embedding-3-small"` |  |
-| `membersCanRemember` | bool | `false` | 允许普通群友用 /记住 写入记忆（否则仅主人） |
+| `membersCanRemember` | bool | `false` | 允许普通群友用 /记住 写入记忆（否则仅管理员） |
+| `agentPerHour` | int | `20` | Agent 每个范围每小时最多写入几条记忆 |
+| `memberMaxChars` | int | `200` | 非管理员要求记住的内容最长字数 |
 
 ## 消息互通（`relay`） · 默认关闭
 
@@ -115,7 +118,7 @@
 
 ## 请求自动处理（`requests`） · 默认关闭
 
-按规则自动同意/拒绝好友申请与加群请求，并私聊通知主人
+按规则自动同意/拒绝好友申请与加群请求，并私聊通知管理员
 
 
 
@@ -127,8 +130,8 @@
 | `friendKeywords` | list | `[]` | 好友申请同意关键词 |
 | `groupJoin` | select（manual/approve/keyword） | `"manual"` | 他人申请加入我管理的群 |
 | `groupJoinKeywords` | list | `[]` | 加群申请同意关键词 |
-| `groupInvite` | select（manual/owner/approve/reject） | `"owner"` | 被邀请入群：owner 仅主人邀请时同意 |
-| `notifyOwner` | bool | `true` | 私聊通知主人处理结果 |
+| `groupInvite` | select（manual/owner/approve/reject） | `"owner"` | 被邀请入群：owner 仅管理员邀请时同意 |
+| `notifyOwner` | bool | `true` | 私聊通知管理员处理结果 |
 
 ## 定时与提醒（`scheduler`）
 
@@ -148,6 +151,50 @@
 |---|---|---|---|
 | `membersCanUse` | bool | `true` | 允许普通成员使用 /提醒 |
 | `maxJobsPerUser` | int | `10` | 每人最多同时存在的提醒数 |
+
+## 仿真与人格（`social`）
+
+由 Agent 驱动（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言、按会话绑定人格卡
+
+**命令**
+
+- `/仿真 [开|关|唤醒|重置|状态]` — 仿真开关与状态
+- `/人格 [列表|<人格名>|默认]`（别名：/角色） — 查看/切换本会话人格
+
+**Agent 工具**：`qq_set_wake`、`qq_social_state`、`qq_get_persona`
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `driver` | select（dsh） | `"dsh"` | Agent 驱动 |
+| `convs` | list | `[]` | 启用仿真的会话（group:群号 / private:QQ），留空 = 不启用 |
+| `defaultRole` | string | `""` | 默认人格卡名（roles/ 目录下的文件名，不含 .md；留空 = 默认群友） |
+| `roleBindings` | list | `[]` | 按会话绑定人格：会话=>人格名，如 group:123=>小鲸鱼 |
+| `roleMaxChars` | int | `8000` | 人格卡注入上限（字） |
+| `botNames` | list | `[]` | 你的别名（被叫到算"叫名字"，昵称与群名片自动包含） |
+| `defaultMode` | select（diving/active） | `"diving"` | 默认模式：diving 潜水（被叫才醒）/ active 活跃 |
+| `atMention` | bool | `true` | @我 / 回复我 时唤醒 |
+| `nameMention` | bool | `true` | 提到名字时唤醒 |
+| `question` | bool | `true` | 有人问问题时唤醒 |
+| `poke` | bool | `true` | 被戳时唤醒 |
+| `keywords` | list | `[]` | 关键词（命中即唤醒） |
+| `probability` | float | `0.05` | 潜水时普通消息的随机唤醒概率 |
+| `batchWindowSec` | int | `8` | 批量窗口（秒）：收到触发后等一会儿再唤醒，把连续消息合并 |
+| `maxWakePerMinute` | int | `2` | 每会话每分钟最多唤醒次数 |
+| `maxWakePerHour` | int | `20` | 每会话每小时最多唤醒次数 |
+| `noActionLimit` | int | `3` | 连续多少轮什么都没做就恢复默认配置 |
+| `replyCheckSec` | int | `45` | 发言后多久回来看看有没有人接（秒，0 = 不检查） |
+| `sleepMinMinutes` | int | `5` | 沉睡下限（分钟） |
+| `sleepMaxMinutes` | int | `180` | 沉睡上限（分钟） |
+| `proactive` | bool | `true` | 群里安静时偶尔主动开话题 |
+| `proactiveIdleMinutes` | int | `15` | 安静多久算"冷场"（分钟） |
+| `proactiveCheckMinutes` | int | `45` | 平均多久检查一次（分钟） |
+| `proactiveProbability` | float | `0.3` | 检查时主动开口的概率（深夜/刚说过话会自动降低） |
+| `wakeMessageLimit` | int | `15` | 唤醒时附带的新消息条数上限 |
+| `wakeMaxChars` | int | `6000` | 唤醒消息快照字数上限 |
+| `withMemory` | bool | `true` | 唤醒时附带相关记忆（需记忆插件） |
+| `forwardText` | bool | `false` | 兜底：Agent 本轮没调用发送工具时，把它的文字回复发出去（一般不建议） |
 
 ## 群聊统计（`stats`）
 
@@ -225,6 +272,29 @@
 | `sttApiKey` | secret | `""` | 转写 API Key |
 | `sttModel` | string | `"whisper-1"` | 转写模型 |
 | `autoTranscribe` | bool | `true` | 收到语音自动转写并附在消息后 |
+
+## 联网搜索（`websearch`）
+
+让 Agent 查梗、查热点、查事实：DeepSeek 联网搜索（与 DSH 同源）+ Bing 回退 + 安全网页抓取
+
+**命令**
+
+- `/搜索 <关键词>`（别名：/search） — 联网搜索
+
+**Agent 工具**：`qq_web_search`、`qq_web_fetch`
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `provider` | select（auto/deepseek/bing） | `"auto"` | auto：先 DeepSeek，失败回退 Bing |
+| `apiKey` | secret | `""` | DeepSeek API Key（留空则读环境变量或 DSH 已保存的 Key） |
+| `apiKeyEnv` | string | `"DEEPSEEK_API_KEY"` | 环境变量名 / DSH 凭据名 |
+| `baseUrl` | string | `"https://api.deepseek.com/anthropic/v1"` | DeepSeek Anthropic 兼容端点 |
+| `model` | string | `"deepseek-v4-flash"` | 搜索用模型 |
+| `maxResults` | int | `8` | 每次最多返回结果数 |
+| `perHour` | int | `30` | 每小时最多搜索/抓取次数（防止滥用与费用失控） |
+| `fetchMaxChars` | int | `8000` | 网页抓取返回的最大字数 |
 
 ## 入群欢迎（`welcome`） · 默认关闭
 

@@ -38,7 +38,7 @@ node bin/qab.mjs status
 |---|---|
 | `onebot` | `wsUrl` `httpUrl` `accessToken` `httpToken` `snowlumaHome` `autoDiscover` |
 | `server` | `host`（默认仅本机）`port`（3210）`consolePassword` |
-| `owners` | 主人 QQ 列表（插件管理命令、请求通知） |
+| `owners` | 管理员 QQ 列表（插件管理命令、请求通知） |
 | `access` | `mode`（all / allowlist）、白名单、黑名单、`readOnly` |
 | `limits` | 发送限流与分条节奏 |
 | `agents` | `tokens`、各等级策略 `policy`、审批超时、`disabledTools` |

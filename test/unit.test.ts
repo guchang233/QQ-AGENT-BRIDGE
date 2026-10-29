@@ -8,6 +8,7 @@ import { oneLine } from '../src/bridge.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
 import { parseWhen } from '../src/system-plugins/scheduler/index.ts';
 import { actionTier } from '../src/onebot/catalog.ts';
+import { isPrivateIp } from '../src/util/safe-fetch.ts';
 import { Policy } from '../src/policy.ts';
 import { ConfigSchema } from '../src/config.ts';
 
@@ -59,6 +60,10 @@ describe('杂项', () => {
     expect(p.resolveConvToken('ct_xxx')).toBeUndefined();
     const other = new Policy(() => ConfigSchema.parse({ server: { sessionSecret: 'k2' } }));
     expect(other.resolveConvToken(t)).toBeUndefined();
+  });
+  it('SSRF：内网地址判定', () => {
+    for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '::1', 'fd00::1', '::ffff:127.0.0.1', '0.0.0.0']) expect(isPrivateIp(ip)).toBe(true);
+    for (const ip of ['8.8.8.8', '1.1.1.1', '2400:3200::1']) expect(isPrivateIp(ip)).toBe(false);
   });
   it('动作分级', () => {
     expect(actionTier('get_group_list')).toBe('read');

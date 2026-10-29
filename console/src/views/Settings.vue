@@ -42,7 +42,8 @@ onMounted(load);
           <n-form-item label="白名单私聊"><n-dynamic-tags v-model:value="cfg.access.private" /></n-form-item>
           <n-form-item label="黑名单群"><n-dynamic-tags v-model:value="cfg.access.denyGroups" /></n-form-item>
           <n-form-item label="黑名单私聊"><n-dynamic-tags v-model:value="cfg.access.denyPrivate" /></n-form-item>
-          <n-form-item label="主人 QQ"><n-dynamic-tags v-model:value="cfg.owners" /></n-form-item>
+          <n-form-item label="管理员 QQ"><n-dynamic-tags v-model:value="cfg.owners" /></n-form-item>
+          <n-form-item label="对管理员的称呼"><n-input v-model:value="cfg.ownerTitle" placeholder="管理员 / 主人 / 老板…" style="width: 200px" /></n-form-item>
         </n-form>
         <n-alert type="info" :show-icon="false" style="font-size: 12px">范围外的会话：Agent 看不到其消息也无法发送，插件也不会响应；人类在控制台中不受限制。</n-alert>
       </n-card>

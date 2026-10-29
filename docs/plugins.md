@@ -113,7 +113,7 @@ ctx.onMessage(async (e) => { ... }, { scope: 'group', priority: -10 });
 // 处理器选项
 { priority: 0,            // 越大越先执行
   scope: 'all',           // group / private / all
-  ownerOnly: false,       // 仅主人
+  ownerOnly: false,       // 仅管理员
   requireMention: false } // 群聊中需 @机器人
 ```
 

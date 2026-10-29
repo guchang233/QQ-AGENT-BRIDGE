@@ -1,11 +1,11 @@
 import { definePlugin } from '../../sdk.ts';
 
-/** 基础管理：帮助菜单、状态、插件开关（主人）、只读开关（主人）。 */
+/** 基础管理：帮助菜单、状态、插件开关（管理员）、只读开关（管理员）。 */
 export default definePlugin({
   name: 'admin',
   displayName: '基础管理',
   version: '1.0.0',
-  description: '/help 帮助菜单、/状态、主人在 QQ 里管理插件与只读模式',
+  description: '/help 帮助菜单、/状态、管理员在 QQ 里管理插件与只读模式',
   config: {
     helpHeader: { type: 'string', default: '可用命令（前缀 / 或 #；群里 @我 时可省略）：', description: '帮助菜单标题' },
   },

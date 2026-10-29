@@ -8,7 +8,7 @@ import { oneLine } from '../bridge.ts';
  * 从 qq-bridge 一键迁移。只读取 qq-bridge 目录，不修改它；可重复执行（幂等：已存在的不重复导入）。
  *
  * 映射：
- *  config.json   → 会话范围 / 主人 / DSH 驱动参数 / 发送节奏 / 自定义价目 / 仿真插件参数（socialV2.*）
+ *  config.json   → 会话范围 / 管理员 / DSH 驱动参数 / 发送节奏 / 自定义价目 / 仿真插件参数（socialV2.*）
  *  roles/*.md    → roles/（格式兼容，〔二代〕标签自动处理）
  *  state/current-role.json → 仿真默认人格
  *  state/sessions.json     → 启用仿真的会话
@@ -68,7 +68,7 @@ export async function migrateQqBridge(bridge: Bridge, dir: string, opt: MigrateO
     cfg.access.denyGroups = [...new Set([...cfg.access.denyGroups, ...ids(qb.deny?.groups)])];
     cfg.access.denyPrivate = [...new Set([...cfg.access.denyPrivate, ...ids(qb.deny?.private)])];
     if (qb.ownerQQ && String(qb.ownerQQ) !== bridge.self?.userId) cfg.owners = [...new Set([...cfg.owners, String(qb.ownerQQ)])];
-    else if (qb.ownerQQ) warnings.push(`qq-bridge 的 ownerQQ（${qb.ownerQQ}）就是机器人自己的账号，未导入为主人；请在设置中填写你自己的 QQ`);
+    else if (qb.ownerQQ) warnings.push(`qq-bridge 的 ownerQQ（${qb.ownerQQ}）就是机器人自己的账号，未导入为管理员；请在设置中填写你自己的 QQ`);
     const d = qb.dsh ?? {};
     Object.assign(cfg.drivers.dsh, {
       baseUrl: d.baseUrl || cfg.drivers.dsh.baseUrl, provider: d.provider || cfg.drivers.dsh.provider, model: d.model || cfg.drivers.dsh.model,

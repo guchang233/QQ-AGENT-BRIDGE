@@ -13,9 +13,11 @@ import type { DatabaseSync } from 'node:sqlite';
  *   综合分 = w相关 × 相关度 + w保持 × R + w重要 × 重要度/5
  */
 
-export type MemoryKind = 'fact' | 'preference' | 'event' | 'relation' | 'task' | 'note';
-export const KINDS: MemoryKind[] = ['fact', 'preference', 'event', 'relation', 'task', 'note'];
-export const KIND_LABEL: Record<MemoryKind, string> = { fact: '事实', preference: '偏好', event: '事件', relation: '关系', task: '待办', note: '笔记' };
+export type MemoryKind = 'fact' | 'preference' | 'event' | 'relation' | 'task' | 'note' | 'rule';
+export const KINDS: MemoryKind[] = ['fact', 'preference', 'event', 'relation', 'task', 'note', 'rule'];
+/** Agent 可写的类型（rule 只能由管理员通过命令/控制台设定） */
+export const AGENT_KINDS = KINDS.filter((k) => k !== 'rule');
+export const KIND_LABEL: Record<MemoryKind, string> = { fact: '事实', preference: '偏好', event: '事件', relation: '关系', task: '待办', note: '笔记', rule: '管理员规则' };
 
 export interface MemoryRow {
   id: number; scope: string; subject: string; kind: MemoryKind; content: string; tags: string; importance: number;
