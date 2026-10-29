@@ -7,7 +7,7 @@ const msg = useMessage();
 const info = ref<any>(null);
 const form = ref<any>({});
 const busy = ref('');
-const result = ref<{ steps: string[]; warnings: string[] } | null>(null);
+const result = ref<{ steps: string[]; warnings: string[]; restartRequired?: boolean } | null>(null);
 const test = ref<any>(null);
 
 async function load() {
@@ -75,7 +75,7 @@ onUnmounted(off);
     <n-space style="margin-top: 10px">
       <n-popconfirm @positive-click="install">
         <template #trigger><n-button type="primary" :loading="busy === 'install'">{{ setup.mcpRegistered ? '重新接入（更新预设）' : '一键接入 DSH' }}</n-button></template>
-        将修改 {{ setup.profileDir }} 下的 cordis.patch.yml 与 package.json（会先备份），并创建目录链接。继续？
+        将在 {{ setup.profileDir }} 的 cordis.patch.yml 中注册 MCP（会先备份），并通过 DSH 自己的插件管理器安装预设 bundle。继续？
       </n-popconfirm>
       <n-button :loading="busy === 'test'" @click="doTest">测试连接</n-button>
       <n-popconfirm v-if="setup.mcpRegistered || setup.bundleRegistered" @positive-click="uninstall">
@@ -91,7 +91,8 @@ onUnmounted(off);
     <n-alert v-if="result" type="success" style="margin-top: 10px" :show-icon="false" closable @close="result = null">
       <div v-for="s in result.steps" :key="s">✓ {{ s }}</div>
       <div v-for="w in result.warnings" :key="w" style="color: #f0a020">! {{ w }}</div>
-      <div style="margin-top: 6px"><b>请重启 DSH 使配置生效</b>，然后点「测试连接」确认。</div>
+      <div v-if="result.restartRequired" style="margin-top: 6px"><b>请重启 DSH 使配置生效</b>，然后点「测试连接」确认。</div>
+      <div v-else-if="result.restartRequired === false" style="margin-top: 6px">DSH 已即时加载，无需重启。可以去「仿真与人格」页启用会话了。</div>
     </n-alert>
 
     <n-form label-placement="left" label-width="110" size="small" style="margin-top: 14px; max-width: 620px">

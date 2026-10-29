@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import type { Bridge } from '../../bridge.ts';
 import { ROOT } from '../../config.ts';
 import { randomToken } from '../../util/fs.ts';
-import { dshHome, localDshPorts } from './client.ts';
+import { dshHome, localDshPorts, DshClient, discoverDshBaseUrl, isLoopback } from './client.ts';
 import { BUNDLE_NAME, MCP_SERVER_NAME, PRESET_ID, TOOL_RESTRICT_SOURCE, presetPatchYaml } from './preset.ts';
 
 /**
@@ -44,6 +43,16 @@ function paths(bridge: Bridge) {
   };
 }
 
+const NL = String.fromCharCode(10);
+const slash = (p: string) => p.split(path.sep).join('/');
+/** 去掉本项目在 cordis.patch.yml 中的标记区块（只动自己的区块）。 */
+function withoutBlock(text: string): string {
+  const a = text.indexOf(BEGIN);
+  if (a < 0) return text;
+  const b = text.indexOf(END, a);
+  if (b < 0) return text;
+  return text.slice(0, a) + text.slice(b + END.length).replace(/^\r?\n/, '');
+}
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 function backup(file: string) { if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak-qab-${stamp()}`); }
 
@@ -84,7 +93,31 @@ function writeBundle(dir: string) {
   fs.writeFileSync(path.join(dir, 'presets', `${PRESET_ID}.patch.yml`), presetPatchYaml());
 }
 
-export function installDsh(bridge: Bridge): { steps: string[]; restartRequired: boolean; warnings: string[] } {
+/** 找到可用的 DSH（运行中才返回客户端）。 */
+async function liveDsh(bridge: Bridge): Promise<DshClient | null> {
+  const c = bridge.config.drivers.dsh;
+  const opts = { authToken: c.authToken || undefined, allowRemote: c.allowRemote, dshHome: c.dshHome || undefined };
+  const url = (await new DshClient({ ...opts, baseUrl: c.baseUrl, timeoutMs: 4000 }).ping()) ? c.baseUrl
+    : c.autoDiscover && isLoopback(c.baseUrl) ? await discoverDshBaseUrl(opts, c.baseUrl) : '';
+  if (!url) return null;
+  if (url !== c.baseUrl) { const cfg = structuredClone(bridge.config); cfg.drivers.dsh.baseUrl = url; bridge.updateConfig(cfg); }
+  return new DshClient({ ...opts, baseUrl: url, timeoutMs: 300_000 });
+}
+
+/** 手动注册 bundle（DSH 未运行时的退路）：两层目录链接 + profile package.json。 */
+function manualRegister(p: ReturnType<typeof paths>) {
+  link(p.bundleSrc, p.pluginLink);
+  link(p.pluginLink, p.nmLink);
+  backup(p.pkgFile);
+  const pkg = JSON.parse(fs.readFileSync(p.pkgFile, 'utf8'));
+  pkg.dependencies ??= {};
+  pkg.dependencies[BUNDLE_NAME] = `link:${slash(p.pluginLink)}`;
+  pkg.dsh ??= {}; pkg.dsh.profile ??= {}; pkg.dsh.profile.bundles ??= [];
+  if (!pkg.dsh.profile.bundles.includes(BUNDLE_NAME)) pkg.dsh.profile.bundles.push(BUNDLE_NAME);
+  fs.writeFileSync(p.pkgFile, JSON.stringify(pkg, null, 2) + NL);
+}
+
+export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; restartRequired: boolean; warnings: string[] }> {
   const p = paths(bridge);
   const steps: string[] = [];
   const warnings: string[] = [];
@@ -102,29 +135,17 @@ export function installDsh(bridge: Bridge): { steps: string[]; restartRequired: 
     steps.push('已将 token「dsh」设为会话绑定');
   }
   cfg.drivers.dsh.enabled = true;
-  if (cfg.drivers.dsh.preset !== PRESET_ID) cfg.drivers.dsh.preset = PRESET_ID;
+  cfg.drivers.dsh.preset = PRESET_ID;
   bridge.updateConfig(cfg);
 
-  // 2. bundle 文件 + 两层目录链接（与 dsh plugin install 物化出的形态一致）
+  // 2. 生成 bundle 文件
   writeBundle(p.bundleSrc);
-  link(p.bundleSrc, p.pluginLink);
-  link(p.pluginLink, p.nmLink);
-  steps.push(`生成预设 bundle ${BUNDLE_NAME}（预设 ${PRESET_ID}）并链接到 DSH`);
+  steps.push(`生成预设 bundle ${BUNDLE_NAME}（预设 ${PRESET_ID}）`);
 
-  // 3. profile package.json：link 依赖 + bundles
-  backup(p.pkgFile);
-  const pkg = JSON.parse(fs.readFileSync(p.pkgFile, 'utf8'));
-  pkg.dependencies ??= {};
-  pkg.dependencies[BUNDLE_NAME] = `link:${p.pluginLink.replace(/\\/g, '/')}`;
-  pkg.dsh ??= {}; pkg.dsh.profile ??= {}; pkg.dsh.profile.bundles ??= [];
-  if (!pkg.dsh.profile.bundles.includes(BUNDLE_NAME)) pkg.dsh.profile.bundles.push(BUNDLE_NAME);
-  fs.writeFileSync(p.pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
-  steps.push('在 profile package.json 中注册 bundle');
-
-  // 4. cordis.patch.yml：MCP 服务（stdio 代理到本守护进程，自动跟随 token）
+  // 3. cordis.patch.yml：MCP 服务（stdio 代理到本守护进程）
   backup(p.patchFile);
   const old = fs.existsSync(p.patchFile) ? fs.readFileSync(p.patchFile, 'utf8') : '';
-  const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+  const q = (x: string) => `'${x.replace(/'/g, "''")}'`;
   const block = [
     BEGIN,
     '# 由 QQ-Agent Bridge 维护；整段会被替换，请勿手工编辑内部条目。',
@@ -142,30 +163,54 @@ export function installDsh(bridge: Bridge): { steps: string[]; restartRequired: 
     `          - ${q(tok.token)}`,
     '        toolCallTimeoutMs: 1900000',
     END,
-  ].join('\n');
-  const stripped = old.includes(BEGIN) ? old.replace(new RegExp(`${BEGIN}[\\s\\S]*?${END}\\n?`), '') : old;
-  fs.writeFileSync(p.patchFile, `${stripped.replace(/\s*$/, '')}${stripped.trim() ? '\n' : ''}${block}\n`);
+  ].join(NL);
+  fs.writeFileSync(p.patchFile, withoutBlock(old).trimEnd() + (old.trim() ? NL : '') + block + NL);
   steps.push(`在 cordis.patch.yml 注册 MCP 服务「${MCP_SERVER_NAME}」`);
 
-  // 5. 尽量执行 dsh plugin install（不在 PATH 上就提示手动执行）
-  const r = process.platform === 'win32'
-    ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `dsh.cmd plugin --profile "${resolveProfile(bridge)}" install`], { encoding: 'utf8', timeout: 180_000 })
-    : spawnSync('dsh', ['plugin', '--profile', resolveProfile(bridge), 'install'], { encoding: 'utf8', timeout: 180_000 });
-  if (r.status === 0) steps.push('dsh plugin install 完成');
-  else warnings.push(`未能自动执行「dsh plugin --profile ${resolveProfile(bridge)} install」（dsh 命令不在 PATH 上？）。目录链接已建好，多数情况下重启 DSH 即可；若 DSH 报 bundle 解析失败请手动执行该命令。`);
+  // 4. 安装并启用 bundle：DSH 运行中 → 走 DSH 自己的插件管理器（自带 pnpm，与设置页「插件管理」同一路径）
+  let restartRequired = true;
+  const dsh = await liveDsh(bridge);
+  if (dsh) {
+    const bundles: any[] = await dsh.call('pluginManager/listBundles', {}).catch(() => []);
+    const ex = bundles.find((b) => b?.name === BUNDLE_NAME);
+    let r: any;
+    if (ex?.installed) {
+      r = await dsh.call('pluginManager/setBundleEnabled', { name: BUNDLE_NAME, enabled: true });
+      steps.push('预设 bundle 已安装，已通过 DSH 插件管理器重新启用（文件为链接，内容已更新）');
+    } else {
+      const spec = `link:${slash(p.bundleSrc)}`;
+      r = await dsh.call('pluginManager/installBundle', { spec, options: { enabled: true, requestId: `qab-${Date.now()}` } });
+      if (r?.status === 'refused') throw new Error(`DSH 拒绝安装预设：${r.problem ?? ''} ${r.reason ?? ''}`.trim());
+      steps.push('已通过 DSH 插件管理器安装并启用预设 bundle（使用 DSH 自带的 pnpm）');
+    }
+    const outcome = JSON.stringify(r ?? {});
+    restartRequired = /restart/i.test(outcome) && !/"restartRequired":false/.test(outcome);
+    // 确认预设已出现
+    const presets: any = await dsh.call('agentPresets/list', {}).catch(() => null);
+    if (presets?.presets?.some((x: any) => x.id === PRESET_ID)) { steps.push(`DSH 中已出现预设「${PRESET_ID}」`); restartRequired = false; }
+    else warnings.push(`DSH 中暂未出现预设「${PRESET_ID}」，请重启 DSH 后在此处点「测试连接」`);
+  } else {
+    manualRegister(p);
+    steps.push('DSH 未运行：已手动链接 bundle 并写入 profile package.json');
+    warnings.push('请启动（或重启）DSH 使配置生效；若 DSH 提示 bundle 解析失败，打开 DSH 后在这里再点一次「一键接入」即可由 DSH 自己完成安装。');
+  }
 
   if (dshSetupStatus(bridge).qqBridgeDetected) warnings.push('检测到 qq-bridge 的 DSH 配置：已保留不动，两者可以共存（qq-bridge 用 qq-chat-v2 预设，本项目用 qab-qq 预设）。');
-  return { steps, restartRequired: true, warnings };
+  return { steps, restartRequired, warnings };
 }
 
-export function uninstallDsh(bridge: Bridge): string[] {
+export async function uninstallDsh(bridge: Bridge): Promise<string[]> {
   const p = paths(bridge);
   const steps: string[] = [];
+  const dsh = await liveDsh(bridge).catch(() => null);
+  if (dsh) {
+    try { await dsh.call('pluginManager/removeBundle', { name: BUNDLE_NAME }); steps.push('已通过 DSH 插件管理器移除预设 bundle'); } catch (e: any) { steps.push(`DSH 移除 bundle 失败（${e.message}），改为手动移除`); }
+  }
   if (fs.existsSync(p.patchFile)) {
     const old = fs.readFileSync(p.patchFile, 'utf8');
     if (old.includes(BEGIN)) {
       backup(p.patchFile);
-      fs.writeFileSync(p.patchFile, old.replace(new RegExp(`\\n?${BEGIN}[\\s\\S]*?${END}\\n?`), '\n'));
+      fs.writeFileSync(p.patchFile, withoutBlock(old).trimEnd() + NL);
       steps.push('已从 cordis.patch.yml 移除 MCP 区块');
     }
   }

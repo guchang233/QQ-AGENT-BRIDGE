@@ -99,8 +99,8 @@ async function main() {
       const { Bridge } = await import('./bridge.ts');
       const { installDsh, uninstallDsh, dshSetupStatus } = await import('./drivers/dsh/setup.ts');
       const bridge = new Bridge();
-      if (rest[0] === 'install') { const r = installDsh(bridge); r.steps.forEach((x) => console.log(`✓ ${x}`)); r.warnings.forEach((x) => console.log(`! ${x}`)); console.log('请重启 DSH 使配置生效'); }
-      else if (rest[0] === 'uninstall') uninstallDsh(bridge).forEach((x) => console.log(`✓ ${x}`));
+      if (rest[0] === 'install') { const r = await installDsh(bridge); r.steps.forEach((x) => console.log(`✓ ${x}`)); r.warnings.forEach((x) => console.log(`! ${x}`)); if (r.restartRequired) console.log('请重启 DSH 使配置生效'); }
+      else if (rest[0] === 'uninstall') (await uninstallDsh(bridge)).forEach((x) => console.log(`✓ ${x}`));
       else console.log(JSON.stringify(dshSetupStatus(bridge), null, 2));
       await bridge.stop();
       process.exit(0);

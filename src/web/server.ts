@@ -262,13 +262,13 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   });
   app.post('/api/drivers/dsh/install', async () => {
     const { installDsh } = await import('../drivers/dsh/setup.ts');
-    const r = installDsh(bridge);
+    const r = await installDsh(bridge);
     await (bridge.drivers.get('dsh') as any)?.reconfigure?.();
     return r;
   });
   app.post('/api/drivers/dsh/uninstall', async () => {
     const { uninstallDsh } = await import('../drivers/dsh/setup.ts');
-    const steps = uninstallDsh(bridge);
+    const steps = await uninstallDsh(bridge);
     await bridge.drivers.get('dsh')?.stop();
     return { steps };
   });
