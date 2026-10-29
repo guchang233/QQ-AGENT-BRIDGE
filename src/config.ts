@@ -120,7 +120,8 @@ export const ConfigSchema = z.object({
       model: z.string().default('deepseek-flash'),
       reasoningEffort: z.enum(['off', 'low', 'high', 'max']).default('high'),
       workspacePath: z.string().default(''),
-      workspaceTitle: z.string().default('QQ-Agent Bridge'),
+      /** 与 qq-bridge 一致：所有 QQ 会话挂在同一个工作区，首次创建时命名 */
+      workspaceTitle: z.string().default('QQ 聊天'),
       /** DSH 工具审批：console 交给控制台审批 / reject 一律拒绝 */
       approvals: z.enum(['console', 'reject']).default('reject'),
     }).prefault({}),
@@ -155,6 +156,8 @@ export function loadConfig(file = CONFIG_PATH): { config: Config; created: boole
     config.agents.tokens.push({ name: 'default', token: `qab_${randomToken(24)}`, tiers: ['read', 'send', 'manage', 'danger'], groups: [], private: [], enabled: true, sessionBound: false });
     dirty = true;
   }
+  // 旧版默认工作区名 → 与 qq-bridge 一致的「QQ 聊天」
+  if (config.drivers.dsh.workspaceTitle === 'QQ-Agent Bridge') { config.drivers.dsh.workspaceTitle = 'QQ 聊天'; dirty = true; }
   if (!config.onebot.snowlumaHome) {
     const guess = guessSnowLumaHome();
     if (guess) { config.onebot.snowlumaHome = guess; dirty = true; }

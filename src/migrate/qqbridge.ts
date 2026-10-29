@@ -74,6 +74,9 @@ export async function migrateQqBridge(bridge: Bridge, dir: string, opt: MigrateO
       baseUrl: d.baseUrl || cfg.drivers.dsh.baseUrl, provider: d.provider || cfg.drivers.dsh.provider, model: d.model || cfg.drivers.dsh.model,
       reasoningEffort: ['off', 'low', 'high', 'max'].includes(d.reasoningEffort) ? d.reasoningEffort : cfg.drivers.dsh.reasoningEffort,
       authToken: d.authToken || '', allowRemote: !!d.allowRemote,
+      // 复用 qq-bridge 的 DSH 工作区：会话仍挂在原来的「QQ 聊天」分组下
+      workspacePath: qb.sessionCwd ? String(qb.sessionCwd) : path.join(dir, 'state', 'agents'),
+      workspaceTitle: qb.workspaceTitle || 'QQ 聊天',
     });
     const send = s2.send ?? {};
     if (send.maxSendPerMinute) cfg.limits.convPerMinute = Number(send.maxSendPerMinute);

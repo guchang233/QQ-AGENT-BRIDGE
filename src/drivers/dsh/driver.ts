@@ -123,7 +123,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
   // ------------------------------------------------------------------ 会话
   private async ensureWorkspace(): Promise<string> {
     if (this.workspaceId) return this.workspaceId;
-    const dir = this.cfg.workspacePath || path.join(this.bridge.dataDir, 'dsh-workspace');
+    const dir = this.cfg.workspacePath || path.join(this.bridge.dataDir, 'agents');
     fs.mkdirSync(dir, { recursive: true });
     const v: any = await this.client.call('workspace/create', { path: dir });
     this.workspaceId = v.workspace.workspaceId;
@@ -136,10 +136,38 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     return v?.presets ?? [];
   }
 
+  /** 同 qq-bridge 的 ensureChatModel：按「模型配置版本」对每个会话设置一次模型，失败重试一次。 */
+  private modelApplied = new Map<string, string>();
+  private async ensureChatModel(sessionId: string): Promise<'applied' | 'not-found' | 'failed'> {
+    const c = this.cfg;
+    const epoch = `${c.provider}|${c.model}|${c.reasoningEffort}`;
+    if (!c.model || this.modelApplied.get(sessionId) === epoch) return 'applied';
+    let last: any = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const r: any = await this.client.call('session/selectModel', { sessionId, provider: c.provider, model: c.model, reasoningEffort: c.reasoningEffort });
+        this.modelApplied.set(sessionId, epoch);
+        log.info(`已设置会话模型 ${sessionId} -> ${r?.selected?.provider ?? c.provider}/${r?.selected?.model ?? c.model} (${r?.selected?.reasoningEffort ?? '默认'})`);
+        return 'applied';
+      } catch (e) {
+        last = e;
+        log.warn(`设置会话模型失败 ${sessionId}（第 ${attempt}/2 次）：${(e as Error).message}`);
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+    if (/not[- ]?found/i.test(String(last?.message ?? ''))) { this.modelApplied.set(sessionId, epoch); return 'not-found'; }
+    return 'failed';
+  }
+
   private async ensureSession(conv: string): Promise<SessionRec> {
     const ex = this.sessions.get(conv);
-    if (ex && ex.preset === this.cfg.preset && ex.model === this.cfg.model) return ex;
-    if (ex) { log.info(`${conv} 的 DSH 预设/模型已变化，重建会话`); await this.retire(conv); }
+    if (ex && ex.preset === this.cfg.preset) {
+      const applied = await this.ensureChatModel(ex.sessionId);
+      // DSH 侧会话已不存在：退役本地映射并重建
+      if (applied !== 'not-found') return ex;
+      log.info(`会话 ${conv} 在 DSH 侧已不存在，退役本地映射并重建`);
+      this.forget(conv);
+    } else if (ex) { log.info(`${conv} 的 DSH 预设已变化，退役旧会话`); await this.retire(conv); }
     const pending = this.creating.get(conv);
     if (pending) return pending;
     const p = (async () => {
@@ -151,19 +179,14 @@ export class DshDriver extends EventEmitter implements AgentDriver {
       const workspaceId = await this.ensureWorkspace();
       const v: any = await this.client.call('session/create', { workspaceId, agentPreset: this.cfg.preset });
       const sessionId = String(v.sessionId);
-      if (this.cfg.model) {
-        await this.client.call('session/selectModel', { sessionId, provider: this.cfg.provider, model: this.cfg.model, reasoningEffort: this.cfg.reasoningEffort })
-          .catch((e) => log.warn(`选择模型失败（将使用 DSH 默认模型）：${e.message}`));
-      }
-      // 按 QQ 会话命名，方便在 DSH 侧边栏里找到并查看完整调用（尽力而为）
-      const title = `QQ ${conv.startsWith('group:') ? '群' : '私聊'} · ${this.bridge.convName(conv) || conv}`;
-      await this.client.call('session/rename', { sessionId, title }).catch(() => {});
       const rec: SessionRec = { sessionId, preset: this.cfg.preset, model: this.cfg.model, created: Date.now() };
       this.sessions.set(conv, rec);
       this.convOf.set(sessionId, conv);
+      // 新版 DSH 事件流需要显式 follow，否则收不到回合事件
       this.client.follow(sessionId);
       this.persist();
-      log.info(`为 ${conv} 创建 DSH 会话 ${sessionId.slice(0, 12)}`);
+      await this.ensureChatModel(sessionId);
+      log.info(`新会话 ${conv} -> ${sessionId}（preset: ${rec.preset}）`);
       return rec;
     })();
     this.creating.set(conv, p);
