@@ -5,8 +5,12 @@
   "description": "一体化 QQ ↔ Agent 桥接：MCP 工具、Web 控制台、插件系统（SnowLuma / OneBot v11）",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=24" },
-  "bin": { "qab": "bin/qab.mjs" },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "qab": "bin/qab.mjs"
+  },
   "scripts": {
     "start": "tsx src/cli.ts start",
     "dev": "tsx watch src/cli.ts start",
@@ -17,7 +21,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "console:dev": "npm --prefix console run dev",
-    "console:build": "npm --prefix console run build"
+    "console:build": "npm --prefix console run build",
+    "demo": "tsx test/demo.ts",
+    "build": "npm --prefix console install && npm --prefix console run build"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.6",

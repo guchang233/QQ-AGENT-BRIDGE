@@ -114,5 +114,20 @@ export class MediaService {
     return this.download(v);
   }
 
+  /** 把自己发出的 base64 图片落盘并登记，便于控制台显示与再次引用。 */
+  rememberSent(seg: Segment, conv: string, msgId: string): Segment {
+    const file = String(seg.data.file ?? '');
+    if (!file.startsWith('base64://')) return seg;
+    const buf = Buffer.from(file.slice(9), 'base64');
+    const mime = guessMime(buf);
+    const sha = sha256(buf);
+    const p = path.join(this.opts.dir, `${sha.slice(0, 16)}${MIME_EXT[mime] ?? ''}`);
+    if (!fs.existsSync(p)) atomicWrite(p, buf);
+    const stored: Segment = { type: seg.type, data: { ...seg.data, file: `sent-${sha.slice(0, 16)}` } };
+    const ref = this.register(stored, conv, msgId);
+    this.store.putMedia({ ref, kind: seg.type, local_path: p, mime, size: buf.length, sha });
+    return stored;
+  }
+
   stickerDir() { const d = path.join(path.dirname(this.opts.dir), 'stickers'); fs.mkdirSync(d, { recursive: true }); return d; }
 }

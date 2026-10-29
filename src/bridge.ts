@@ -313,8 +313,7 @@ export class Bridge extends EventEmitter {
       : await this.bot.call('send_private_msg', { user_id: Number(c.id), message: segments });
     const msgId = String(r?.message_id ?? `local-${Date.now()}`);
     const conv = convKey(c);
-    const stored = segments.map((s) => (s.type === 'image' && typeof s.data.file === 'string' && s.data.file.startsWith('base64://')
-      ? { type: 'image', data: { ...s.data, file: `sent-${sha256(s.data.file).slice(0, 12)}`, summary: s.data.summary } } : s));
+    const stored = segments.map((s) => (['image', 'record', 'video'].includes(s.type) ? this.media.rememberSent(s, conv, msgId) : s));
     const m = this.store.insertMessage({
       msgId, conv, senderId: this.self?.userId ?? 'self', senderName: this.self?.nickname ?? '我', isSelf: true, ts: Date.now(),
       segments: stored, text: this.renderForStore(stored, conv, msgId), mentioned: false, recalled: false,

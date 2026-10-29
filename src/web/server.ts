@@ -89,7 +89,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   // ------------------------------------------------------------------ 状态与配置
   app.get('/api/status', async () => {
     const day = Date.now() - 86400_000;
-    return { ...bridge.status(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp` };
+    return { ...bridge.status(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp`, root: ROOT.split(path.sep).join('/') };
   });
   app.post('/api/reconnect', async () => { await bridge.rediscover(); return { ok: true, status: bridge.status() }; });
   app.post('/api/contacts/refresh', async () => { await bridge.refreshContacts(); return { groups: bridge.groups.size, friends: bridge.friends.size }; });
@@ -286,10 +286,14 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   // ------------------------------------------------------------------ 控制台静态文件
   const dist = path.join(ROOT, 'console', 'dist');
   if (fs.existsSync(dist)) {
-    await app.register(fastifyStatic, { root: dist, wildcard: false });
+    // wildcard 模式按请求查找文件，控制台重新构建后无需重启守护进程
+    await app.register(fastifyStatic, {
+      root: dist,
+      setHeaders: (reply, p) => reply.header('cache-control', p.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable'),
+    });
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith('/api/') || req.url.startsWith('/ws/')) return reply.code(404).send({ error: 'not found' });
-      return reply.sendFile('index.html');
+      if (/^\/(api|ws|assets)\//.test(req.url)) return reply.code(404).send({ error: 'not found' });
+      return reply.header('cache-control', 'no-cache').sendFile('index.html');
     });
   } else {
     app.get('/', async (_req, reply) => reply.type('text/html').send('<meta charset="utf-8"><p>控制台尚未构建：请运行 <code>npm run console:build</code></p>'));
