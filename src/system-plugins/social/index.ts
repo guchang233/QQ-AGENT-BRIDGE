@@ -88,11 +88,22 @@ export default definePlugin({
     const driver = () => bridge.drivers.get(c.driver);
     /** 待告知 AI 的系统通知（如管理员对请示的答复），下次唤醒时附在提示词里 */
     const notes = new Map<string, string[]>();
-    const addNote = (conv: string, text: string, wake = true) => {
+    /** wake：true = 以「管理员答复」唤醒；字符串 = 指定唤醒原因；false = 只附在下次唤醒里 */
+    const addNote = (conv: string, text: string, wake: boolean | string = true) => {
       const l = notes.get(conv) ?? [];
       l.push(text);
       notes.set(conv, l.slice(-10));
-      if (wake && enabled.has(conv)) schedule(stateOf(conv), 'adminReply', engineCfg());
+      if (wake && enabled.has(conv)) schedule(stateOf(conv), typeof wake === 'string' ? wake : 'adminReply', engineCfg());
+    };
+    /** 保持活跃到某个时间点（冒泡插件用）：期间 Agent 选「潜水」仍保持活跃 */
+    const holds = new Map<string, number>();
+    const holdLeft = (conv: string) => Math.max(0, (holds.get(conv) ?? 0) - Date.now());
+    const setMode = (conv: string, mode: Mode, opts: { holdUntil?: number; sleepMinutes?: number } = {}) => {
+      const s = stateOf(conv);
+      s.mode = mode;
+      s.sleepUntil = mode === 'sleeping' ? Date.now() + (opts.sleepMinutes ?? 30) * 60_000 : 0;
+      if (opts.holdUntil) holds.set(conv, opts.holdUntil); else holds.delete(conv);
+      save(conv);
     };
     const roleOf = (conv: string) => {
       const b = c.roleBindings.map((l) => l.split('=>')).find(([k]) => k && convKey(parseConv(k.trim())) === conv);
@@ -245,7 +256,7 @@ export default definePlugin({
       return parts.join('\n\n');
     }
 
-    const modeText = (s: ConvState) => s.mode === 'active' ? '活跃（任何新消息都会叫醒你）'
+    const modeText = (s: ConvState) => s.mode === 'active' ? `活跃（任何新消息都会叫醒你）${holdLeft(s.conv) ? `；你正在冒泡，约 ${Math.ceil(holdLeft(s.conv) / 60_000)} 分钟后会自动潜水` : ''}`
       : s.mode === 'sleeping' ? `沉睡到 ${new Date(s.sleepUntil).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })}`
         : '潜水（被 @、叫名字、提问或命中关键词时才醒）';
 
@@ -294,6 +305,8 @@ export default definePlugin({
           const mins = Math.min(c.sleepMaxMinutes, Math.max(c.sleepMinMinutes, a.sleepMinutes ?? 30));
           s.mode = 'sleeping'; s.sleepUntil = now + mins * 60_000;
         } else { s.mode = a.mode as Mode; s.sleepUntil = 0; }
+        if (s.mode === 'sleeping') holds.delete(conv);
+        else if (s.mode === 'diving' && holdLeft(conv)) s.mode = 'active'; // 冒泡中：到点由冒泡插件自动潜水
         if (a.keywords) s.triggers.keywords = a.keywords.slice(0, 30);
         if (a.speakerIds) s.triggers.speakerIds = a.speakerIds;
         if (a.probability !== undefined) s.triggers.probability = a.probability;
@@ -397,7 +410,7 @@ export default definePlugin({
     ctx.route('PUT', 'roles/:name', ({ params, body }) => ({ name: roles.save(params.name, String(body?.content ?? '')) }));
     ctx.route('DELETE', 'roles/:name', ({ params }) => { roles.remove(params.name); return { ok: true }; });
     ctx.route('GET', 'preview/:conv', async ({ params }) => ({ prompt: await buildPrompt(convKey(parseConv(params.conv)), 'manual', true) }));
-    ctx.provide({ addNote, stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
+    ctx.provide({ addNote, setMode, holdLeft, stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
     if (enabled.size) ctx.logger.info(`仿真已在 ${enabled.size} 个会话启用（驱动：${c.driver}）`);
   },
 });

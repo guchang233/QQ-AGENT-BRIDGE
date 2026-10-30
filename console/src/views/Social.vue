@@ -14,6 +14,11 @@ const err = ref('');
 const editing = ref<{ name: string; content: string; isNew?: boolean } | null>(null);
 const preview = ref('');
 const asks = ref<any[]>([]);
+const bubbles = ref<any[]>([]);
+async function loadBubbles() { try { bubbles.value = await api('/api/p/bubble/status'); } catch { bubbles.value = []; } }
+async function bubbleAct(conv: string, act: 'surface' | 'dive') {
+  try { await api(`/api/p/bubble/${act}/${encodeURIComponent(conv)}`, { body: {} }); msg.success(act === 'surface' ? '已冒泡' : '已潜水'); loadBubbles(); } catch (e: any) { msg.error(e.message); }
+}
 async function loadAsks() { try { asks.value = await api('/api/p/ask-admin/requests'); } catch { asks.value = []; } }
 async function decideAsk(id: number, approve: boolean) {
   const note = approve ? '' : (window.prompt('拒绝理由（可空，会转告 AI）') ?? '');
@@ -23,7 +28,7 @@ async function decideAsk(id: number, approve: boolean) {
 async function load() {
   try {
     [convs.value, roles.value] = await Promise.all([api('/api/p/social/convs'), api('/api/p/social/roles')]);
-    loadAsks();
+    loadAsks(); loadBubbles();
     err.value = '';
   } catch (e: any) { err.value = e.status === 404 ? '「仿真与人格」插件未启用：请在「插件」页开启 social' : e.message; }
 }
@@ -73,6 +78,16 @@ onUnmounted(() => { off(); clearTimeout(t); });
       <a style="cursor: pointer; color: #12b7f5" @click="router.push('/plugins')">插件 → 仿真与人格 → 配置</a> 中调整。
       QQ 里管理员也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
     </n-alert>
+
+    <n-card v-if="bubbles.length" title="冒泡" size="small">
+      <div v-for="b in bubbles" :key="b.conv" style="display: flex; align-items: center; gap: 8px; padding: 3px 0">
+        <span style="flex: 1">{{ b.name || b.conv }}
+          <n-text depth="3" style="font-size: 12px">· {{ b.ai ? 'AI' : '预设语句' }} ·
+            {{ b.bubbling ? `冒泡中，${fmtTime(b.until)} 潜水` : `下次约 ${fmtTime(b.nextAt)}` }}</n-text></span>
+        <n-button size="tiny" v-if="!b.bubbling" @click="bubbleAct(b.conv, 'surface')">现在冒泡</n-button>
+        <n-button size="tiny" v-else @click="bubbleAct(b.conv, 'dive')">潜水</n-button>
+      </div>
+    </n-card>
 
     <n-card v-if="asks.length" title="待处理的请示" size="small" style="border-color: #f0a020">
       <div v-for="a in asks" :key="a.id" style="padding: 6px 0; border-bottom: 1px dashed rgba(128,128,128,.25)">

@@ -292,6 +292,21 @@ describe('系统插件', () => {
     bridge.config.owners = [];
   });
 
+  it('冒泡：预设语句冒泡、/潜水 收尾', async () => {
+    const host = bridge.pluginHost!;
+    host.saveConfig('bubble', { convs: ['group:111'], style: 'template', templates: ['冒泡测试语句'], farewell: 1, farewellTemplates: ['潜水测试语句'] });
+    await host.setEnabled('bubble', true);
+    bridge.config.owners = ['20001'];
+    mock.calls.length = 0;
+    const sent = (t: string) => mock.calls.some((c) => c.action === 'send_group_msg' && JSON.stringify(c.params.message).includes(t));
+    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '/冒泡' } }]);
+    await waitFor(() => sent('冒泡测试语句'));
+    mock.pushGroupMessage(111, 20001, [{ type: 'text', data: { text: '/潜水' } }]);
+    await waitFor(() => sent('潜水测试语句'));
+    await host.setEnabled('bubble', false);
+    bridge.config.owners = [];
+  });
+
   it('定时：安排并触发', async () => {
     mock.calls.length = 0;
     const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });

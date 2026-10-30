@@ -8,6 +8,7 @@ import { oneLine, splitLines } from '../src/bridge.ts';
 import { newState, schedule as scheduleWake } from '../src/system-plugins/social/engine.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
 import { parseWhen } from '../src/system-plugins/scheduler/index.ts';
+import { inHours } from '../src/system-plugins/bubble/index.ts';
 import { actionTier } from '../src/onebot/catalog.ts';
 import { isPrivateIp } from '../src/util/safe-fetch.ts';
 import { Policy } from '../src/policy.ts';
@@ -84,6 +85,15 @@ describe('杂项', () => {
     scheduleWake(b, 'atMention', c, t + 1000);                                   // 窗口内被 @：提前
     expect(b.pending!.dueAt).toBe(t + 3000);
     expect(b.pending!.reason).toBe('atMention');
+  });
+  it('冒泡：免打扰时段（含跨午夜）', () => {
+    expect(inHours('0-8', 3)).toBe(true);
+    expect(inHours('0-8', 8)).toBe(false);
+    expect(inHours('23-7', 23)).toBe(true);
+    expect(inHours('23-7', 5)).toBe(true);
+    expect(inHours('23-7', 12)).toBe(false);
+    expect(inHours('12-13, 0-6', 12)).toBe(true);
+    expect(inHours('', 3)).toBe(false);
   });
   it('动作分级', () => {
     expect(actionTier('get_group_list')).toBe('read');
