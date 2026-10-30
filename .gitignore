@@ -10,3 +10,4 @@ dsh/qab-presets/
 release/
 *.tgz
 .update/
+.claude/
