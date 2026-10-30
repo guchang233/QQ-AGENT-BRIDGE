@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Bridge } from '../../bridge.ts';
-import { ROOT } from '../../config.ts';
+import { ROOT, HOME } from '../../config.ts';
 import { randomToken } from '../../util/fs.ts';
 import { dshHome, localDshPorts, DshClient, discoverDshBaseUrl, isLoopback } from './client.ts';
 import { BUNDLE_NAME, MCP_SERVER_NAME, PRESET_ID, TOOL_RESTRICT_SOURCE, presetPatchYaml } from './preset.ts';
@@ -53,7 +53,7 @@ function paths(bridge: Bridge) {
     home, profileDir,
     patchFile: path.join(profileDir, 'cordis.patch.yml'),
     pkgFile: path.join(profileDir, 'package.json'),
-    bundleSrc: path.join(ROOT, 'dsh', BUNDLE_NAME),
+    bundleSrc: path.join(HOME, 'dsh', BUNDLE_NAME),
     pluginLink: path.join(home, 'plugins', BUNDLE_NAME),
     nmLink: path.join(profileDir, 'node_modules', BUNDLE_NAME),
   };

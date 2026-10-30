@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Bridge } from '../bridge.ts';
-import { ROOT } from '../config.ts';
+import { HOME } from '../config.ts';
 import { oneLine } from '../bridge.ts';
 
 /**
@@ -41,7 +41,7 @@ export function detectQqBridge(dir: string) {
 
 /** 猜测 qq-bridge 的位置（本项目同级目录）。 */
 export function guessQqBridgeDir(): string {
-  for (const d of [path.resolve(ROOT, '..', 'qq-bridge'), path.resolve(ROOT, '..', '..', 'qq-bridge')]) if (detectQqBridge(d)) return d;
+  for (const d of [...new Set([path.resolve(HOME, '..', 'qq-bridge'), path.resolve(HOME, '..', '..', 'qq-bridge'), path.resolve(process.cwd(), 'qq-bridge'), path.resolve(process.cwd(), '..', 'qq-bridge')])]) if (detectQqBridge(d)) return d;
   return '';
 }
 
@@ -94,7 +94,7 @@ export async function migrateQqBridge(bridge: Bridge, dir: string, opt: MigrateO
 
   // ---------------------------------------------------------------- 人格卡
   if (opt.roles && info.roles.length) {
-    const target = path.join(ROOT, 'roles');
+    const target = path.join(HOME, 'roles');
     fs.mkdirSync(target, { recursive: true });
     let n = 0; const skipped: string[] = [];
     for (const f of info.roles) {

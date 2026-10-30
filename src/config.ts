@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { z } from 'zod';
@@ -143,10 +144,17 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const CONFIG_PATH = process.env.QAB_CONFIG || path.join(ROOT, 'config', 'qab.yaml');
+/**
+ * 用户数据目录（配置、数据库、人格卡、用户插件）：
+ *   QAB_HOME 环境变量 > 通过 npm 安装（位于 node_modules 内）时用 ~/.qq-agent-bridge > 程序目录（源码 / 发布包）
+ * 程序自带的文件（控制台、系统插件、AstrBot 兼容层）始终从 ROOT 读取。
+ */
+export const HOME = process.env.QAB_HOME ? path.resolve(process.env.QAB_HOME)
+  : ROOT.split(path.sep).includes('node_modules') ? path.join(os.homedir(), '.qq-agent-bridge') : ROOT;
+export const CONFIG_PATH = process.env.QAB_CONFIG || path.join(HOME, 'config', 'qab.yaml');
 
 export function resolveFromRoot(p: string) {
-  return path.isAbsolute(p) ? p : path.join(ROOT, p);
+  return path.isAbsolute(p) ? p : path.join(HOME, p);
 }
 
 export function loadConfig(file = CONFIG_PATH): { config: Config; created: boolean } {
@@ -182,7 +190,7 @@ export function saveConfig(config: Config, file = CONFIG_PATH) {
 
 /** 在常见位置寻找 SnowLuma 安装目录（含 config/onebot_*.json）。 */
 export function guessSnowLumaHome(): string {
-  const candidates = [process.env.SNOWLUMA_HOME, path.resolve(ROOT, '..')].filter(Boolean) as string[];
+  const candidates = [...new Set([process.env.SNOWLUMA_HOME, path.resolve(HOME, '..'), path.resolve(ROOT, '..'), process.cwd()].filter(Boolean) as string[])];
   for (const base of candidates) {
     if (hasOneBotConfig(base)) return base;
     try {

@@ -54,9 +54,9 @@ describe('杂项', () => {
   });
   it('会话令牌：稳定、可解析、防伪造', () => {
     const p = new Policy(() => ConfigSchema.parse({ server: { sessionSecret: 'k1' } }));
-    const t = p.issueConvToken('private:57262494');
-    expect(p.issueConvToken('private:57262494')).toBe(t);
-    expect(p.resolveConvToken(t)).toBe('private:57262494');
+    const t = p.issueConvToken('private:10086');
+    expect(p.issueConvToken('private:10086')).toBe(t);
+    expect(p.resolveConvToken(t)).toBe('private:10086');
     const forged = `ct_${Buffer.from('group:1').toString('base64url')}.${t.split('.')[1]}`;
     expect(p.resolveConvToken(forged)).toBeUndefined();
     expect(p.resolveConvToken('ct_xxx')).toBeUndefined();

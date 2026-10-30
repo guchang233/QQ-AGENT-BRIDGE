@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { definePlugin, z, parseConv, convKey } from '../../sdk.ts';
-import { ROOT } from '../../config.ts';
+import { HOME } from '../../config.ts';
 import type { StoredMessage } from '../../store/db.ts';
 import type { TurnResult } from '../../drivers/types.ts';
 import { RoleStore, DEFAULT_ROLE, sanitizeRoleName } from './roles.ts';
@@ -54,7 +54,7 @@ export default definePlugin({
     // 始终读取最新配置（saveConfig 会替换配置对象，不能在 setup 时固定引用）
     const c = new Proxy({} as typeof ctx.config, { get: (_t, k) => (ctx.config as any)[k] });
     const bridge = ctx.bridge;
-    const roles = new RoleStore(path.join(ROOT, 'roles'), () => c.roleMaxChars);
+    const roles = new RoleStore(path.join(HOME, 'roles'), () => c.roleMaxChars);
     if (!roles.list().length) roles.save('默认群友', DEFAULT_ROLE);
 
     const engineCfg = (): EngineConfig => ({

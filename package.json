@@ -1,7 +1,6 @@
 {
   "name": "qq-agent-bridge",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "description": "一体化 QQ ↔ Agent 桥接：MCP 工具、Web 控制台、插件系统（SnowLuma / OneBot v11）",
   "type": "module",
   "license": "MIT",
@@ -25,7 +24,10 @@
     "demo": "tsx test/demo.ts",
     "build": "npm --prefix console install && npm --prefix console run build",
     "docs:gen": "tsx scripts/gen-docs.ts",
-    "check": "tsc --noEmit && vitest run"
+    "check": "tsc --noEmit && vitest run",
+    "release:pack": "node scripts/pack-release.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.6",
@@ -48,5 +50,33 @@
   },
   "exports": {
     ".": "./src/sdk.ts"
-  }
+  },
+  "keywords": [
+    "qq",
+    "onebot",
+    "snowluma",
+    "mcp",
+    "agent",
+    "bot",
+    "deepseek",
+    "astrbot",
+    "qq-bot"
+  ],
+  "files": [
+    "bin/",
+    "src/",
+    "plugins/",
+    "astrbot_shim/",
+    "console/dist/",
+    "config/qab.example.yaml",
+    "docs/",
+    "scripts/gen-docs.ts",
+    "start.bat",
+    "start.sh",
+    "qab.cmd",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "tsconfig.json"
+  ]
 }

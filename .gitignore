@@ -7,3 +7,5 @@ console/dist/
 roles/*.md
 !roles/README.md
 dsh/qab-presets/
+release/
+*.tgz
