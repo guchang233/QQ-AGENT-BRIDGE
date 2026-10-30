@@ -11,6 +11,7 @@ if not exist console\dist\index.html (
   echo 正在构建控制台...
   call npm run build || (pause & exit /b 1)
 )
+set QAB_SUPERVISED=1
 :loop
 node bin\qab.mjs start
 echo.

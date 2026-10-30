@@ -290,6 +290,19 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     await bridge.drivers.get('dsh')?.stop();
     return { steps };
   });
+  // ---------------------------------------------------------------- 自动更新
+  const updater = () => { if (!bridge.updater) throw new Error('更新器未启用'); return bridge.updater; };
+  app.get('/api/update', async () => bridge.updater?.state ?? null);
+  app.post('/api/update/check', async () => { try { return await updater().check(); } catch (e: any) { return { ...updater().state, error: e.message }; } });
+  app.post('/api/update/install', async (_req, reply) => {
+    const u = updater();
+    if (u.state.phase === 'downloading' || u.state.phase === 'preparing') return reply.code(409).send({ error: '正在更新中' });
+    // 后台下载，进度通过 WebSocket 推送
+    u.install().catch((e: any) => { u.state.phase = 'error'; u.state.error = e.message; u.emit('status', u.state); });
+    return { ok: true };
+  });
+  app.post('/api/update/cancel', async () => { updater().cancel(); return updater().state; });
+
   app.post('/api/drivers/dsh/test', async () => {
     const d: any = bridge.drivers.get('dsh');
     if (!d) return { ok: false, error: '驱动未注册' };
@@ -378,6 +391,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   bridge.on('activity', (a) => push('activity', { ...a, convName: a.conv ? bridge.convName(a.conv) : '' }));
   bridge.on('driver', (d) => push('driver', d));
   bridge.on('request', (r) => push('request', r));
+  bridge.updater?.on('status', (st) => push('update', st));
   bridge.on('notice', (n) => push('notice', n));
   bridge.policy.on('approval', (a) => push('approval', a));
   plugins.on('changed', () => push('plugins', null));

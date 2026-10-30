@@ -35,7 +35,7 @@
 
 **方式一：下载发布包（推荐普通用户）**
 
-在 Releases 页面下载 `qq-agent-bridge-v<版本>-win-x64.zip`（已含依赖，解压即用）或 `qq-agent-bridge-v<版本>.zip`（首次启动自动安装依赖），解压后双击 `start.bat`（macOS / Linux 运行 `./start.sh`）。
+在 [Releases](https://github.com/guchang233/QQ-AGENT-BRIDGE/releases) 页面下载 `qq-agent-bridge-v<版本>-win-x64.zip`（已含依赖，解压即用）或 `qq-agent-bridge-v<版本>.zip`（首次启动自动安装依赖），解压后双击 `start.bat`（macOS / Linux 运行 `./start.sh`）。
 
 **方式二：npm 全局安装**
 
@@ -47,7 +47,7 @@ qab start
 **方式三：源码**
 
 ```bash
-git clone <本仓库地址> qq-agent-bridge
+git clone https://github.com/guchang233/QQ-AGENT-BRIDGE.git qq-agent-bridge
 cd qq-agent-bridge
 npm install
 npm run build      # 构建 Web 控制台

@@ -26,6 +26,8 @@ async function main() {
       const { DshDriver } = await import('./drivers/dsh/driver.ts');
       bridge.registerDriver(new DshDriver(bridge));
       const plugins = new PluginHost(bridge);
+      const { Updater } = await import('./update/index.ts');
+      const updater = bridge.updater = new Updater(bridge);
       await startWeb(bridge, plugins);
       await bridge.start();
       for (const d of bridge.drivers.values()) await d.start().catch((e: any) => console.error(`驱动 ${d.label} 启动失败：`, e.message));
@@ -35,7 +37,11 @@ async function main() {
         await new AstrBotHost(bridge, plugins).start().catch((e: any) => console.error('AstrBot 兼容层启动失败：', e.message));
       }
       if (!bridge.config.server.consolePassword) console.log(`\n首次使用：打开 http://127.0.0.1:${bridge.config.server.port} 完成设置向导\n`);
-      const shutdown = async () => { await bridge.stop(); process.exit(0); };
+      const shutdown = async () => { updater.stop(); await bridge.stop(); process.exit(0); };
+      updater.on('restart', () => { console.log('更新已下载，正在重启…'); void shutdown(); });
+      updater.start();
+      if (updater.state.lastUpdate) console.log(`已从 v${updater.state.lastUpdate.from} 更新到 v${updater.state.lastUpdate.to}`);
+      if (updater.state.lastFailure) console.warn(`上次更新失败：${updater.state.lastFailure}`);
       process.on('SIGINT', shutdown);
       process.on('SIGTERM', shutdown);
       break;
@@ -57,6 +63,20 @@ async function main() {
       for (const t of r.tried) console.log(`  ${t.error ? '✗' : '✓'} ${t.source} ${t.url}${t.error ? `  ${t.error}` : ''}`);
       console.log(r.ok ? `已连接：${r.self?.nickname}(${r.self?.user_id})  WS=${r.wsUrl}` : 'OneBot 不可用：请确认 SnowLuma 已启动并登录 QQ');
       process.exit(r.ok ? 0 : 1);
+    }
+    case 'update': {
+      const { loadConfig } = await import('./config.ts');
+      const { Bridge } = await import('./bridge.ts');
+      const { Updater } = await import('./update/index.ts');
+      loadConfig();
+      const u = new Updater(new Bridge());
+      const st = await u.check().catch((e: any) => { console.error(`检查更新失败：${e.message}`); process.exit(1); });
+      console.log(`当前 v${st.current}，最新 v${st.latest}${st.hasUpdate ? '（有新版本）' : '（已是最新）'}`);
+      if (st.hasUpdate && rest[0] === 'install') {
+        await u.install();
+        console.log(`v${st.latest} 已下载，重新启动（qab start / start.bat）即可完成更新`);
+      } else if (st.hasUpdate) console.log(st.installType === 'package' ? '运行 qab update install 下载更新' : st.hint);
+      process.exit(0);
     }
     case 'token': {
       const { loadConfig, ROOT } = await import('./config.ts');
@@ -128,6 +148,7 @@ async function main() {
   qab start               启动守护进程（OneBot 连接 + Web 控制台 + MCP HTTP + 插件）
   qab mcp [--standalone]  stdio MCP 服务（默认代理到守护进程，连不上则独立运行）
   qab status              探测 SnowLuma / OneBot 连接
+  qab update [install]    检查 / 下载新版本（发布包安装方式，重启后生效）
   qab token               显示 MCP 接入方式与 token
   qab password <pwd>      重设控制台密码
   qab dsh [install|uninstall]  接入 / 移除 DeepSeek Harness（不带参数显示状态）

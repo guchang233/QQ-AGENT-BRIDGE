@@ -20,8 +20,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - name: 标签与版本号一致
+        shell: bash
+        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}" || (echo "标签 ${GITHUB_REF_NAME} 与 package.json 版本不一致" && exit 1)
       - name: 打包（带依赖的免安装包按平台各打一份）
-        run: node scripts/pack-release.mjs --with-deps
+        shell: bash
+        run: node scripts/pack-release.mjs --with-deps $([ "$RUNNER_OS" = Windows ] || echo --no-generic)
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}
@@ -31,6 +35,13 @@ jobs:
     needs: pack
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: 从 CHANGELOG 提取本版本说明
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" 'index($0, "## [" v "]") == 1 {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "见 CHANGELOG.md" > notes.md
+          cat notes.md
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -39,4 +50,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
+          body_path: notes.md
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

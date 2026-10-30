@@ -9,3 +9,4 @@ roles/*.md
 dsh/qab-presets/
 release/
 *.tgz
+.update/

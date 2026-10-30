@@ -78,5 +78,13 @@
     "CHANGELOG.md",
     "LICENSE",
     "tsconfig.json"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guchang233/QQ-AGENT-BRIDGE.git"
+  },
+  "homepage": "https://github.com/guchang233/QQ-AGENT-BRIDGE#readme",
+  "bugs": {
+    "url": "https://github.com/guchang233/QQ-AGENT-BRIDGE/issues"
+  }
 }

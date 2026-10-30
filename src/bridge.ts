@@ -56,6 +56,8 @@ export class Bridge extends EventEmitter {
   isConsumed(conv: string, msgId: string) { return this.consumed.has(`${conv}|${msgId}`); }
   /** 插件宿主（由 PluginHost 构造时挂载） */
   pluginHost?: import('./plugins/host.ts').PluginHost;
+  /** 自动更新（守护进程模式下挂载） */
+  updater?: import('./update/index.ts').Updater;
 
   constructor(config?: Config) {
     super();

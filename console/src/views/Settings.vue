@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { NCard, NForm, NFormItem, NInput, NInputNumber, NSwitch, NButton, NSpace, NDynamicTags, NRadioGroup, NRadio, NText, NAlert, NSpin, useMessage } from 'naive-ui';
-import { api } from '../api';
+import { onMounted, onUnmounted, ref } from 'vue';
+import { NCard, NForm, NFormItem, NInput, NInputNumber, NSwitch, NButton, NSpace, NDynamicTags, NRadioGroup, NRadio, NText, NAlert, NSpin, NProgress, NTag, useMessage } from 'naive-ui';
+import { api, onPush } from '../api';
 
 const msg = useMessage();
 const cfg = ref<any>(null);
@@ -15,11 +15,69 @@ async function save() {
   catch (e: any) { msg.error(e.message); } finally { saving.value = false; }
 }
 onMounted(load);
+
+// ---------------- 版本与更新
+const upd = ref<any>(null);
+const checking = ref(false);
+const showNotes = ref(false);
+async function loadUpd() { upd.value = await api('/api/update').catch(() => null); }
+async function checkUpd() {
+  checking.value = true;
+  try { upd.value = await api('/api/update/check', { body: {} }); if (upd.value.error) msg.error(upd.value.error); else msg.success(upd.value.hasUpdate ? `发现新版本 v${upd.value.latest}` : '已是最新版本'); }
+  catch (e: any) { msg.error(e.message); } finally { checking.value = false; }
+}
+async function installUpd() { try { await api('/api/update/install', { body: {} }); } catch (e: any) { msg.error(e.message); } }
+async function cancelUpd() { upd.value = await api('/api/update/cancel', { body: {} }); }
+const off = onPush((type, st) => { if (type === 'update') upd.value = st; });
+onMounted(loadUpd);
+onUnmounted(() => off?.());
+const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
 </script>
 
 <template>
   <n-spin :show="!cfg">
     <n-space v-if="cfg" vertical :size="16" style="max-width: 760px">
+      <n-card v-if="upd" title="版本与更新" size="small">
+        <n-space vertical :size="8">
+          <div>
+            当前版本 <b>v{{ upd.current }}</b>
+            <template v-if="upd.latest">　·　最新版本 <b>v{{ upd.latest }}</b>
+              <n-tag v-if="upd.hasUpdate" size="small" type="warning" style="margin-left: 6px">有新版本</n-tag>
+              <n-tag v-else size="small" type="success" style="margin-left: 6px">已是最新</n-tag>
+            </template>
+            <n-text v-if="upd.checkedAt" depth="3" style="font-size: 12px; margin-left: 8px">{{ new Date(upd.checkedAt).toLocaleString() }} 检查</n-text>
+          </div>
+          <n-alert v-if="upd.lastUpdate" type="success" :show-icon="false">已从 v{{ upd.lastUpdate.from }} 更新到 v{{ upd.lastUpdate.to }}</n-alert>
+          <n-alert v-if="upd.lastFailure" type="error" :show-icon="false">上次更新失败：{{ upd.lastFailure }}</n-alert>
+          <n-alert v-if="upd.phase === 'error' && upd.error" type="error" :show-icon="false">{{ upd.error }}</n-alert>
+          <div v-if="upd.phase === 'downloading' || upd.phase === 'preparing'">
+            <n-text>{{ upd.phase === 'downloading' ? `正在下载 ${upd.asset}（${fmtSize(upd.assetSize)}）` : '正在准备安装…' }}</n-text>
+            <n-progress type="line" :percentage="upd.progress" :show-indicator="upd.phase === 'downloading'" />
+          </div>
+          <n-alert v-if="upd.phase === 'staged'" type="info" :show-icon="false">
+            v{{ upd.stagedVersion }} 已下载好，{{ upd.supervised ? '正在重启以完成更新…' : '重新启动程序后自动安装（个人配置与数据不受影响）' }}
+          </n-alert>
+          <n-alert v-if="upd.hasUpdate && upd.installType !== 'package'" type="warning" :show-icon="false">{{ upd.hint }}</n-alert>
+          <n-space>
+            <n-button size="small" :loading="checking || upd.phase === 'checking'" @click="checkUpd">检查更新</n-button>
+            <n-button v-if="upd.hasUpdate && upd.installType === 'package' && upd.phase !== 'staged'" size="small" type="primary"
+              :loading="upd.phase === 'downloading' || upd.phase === 'preparing'" @click="installUpd">下载并更新到 v{{ upd.latest }}</n-button>
+            <n-button v-if="upd.phase === 'staged'" size="small" @click="cancelUpd">取消更新</n-button>
+            <n-button v-if="upd.notes" size="small" quaternary @click="showNotes = !showNotes">{{ showNotes ? '收起' : '更新内容' }}</n-button>
+            <n-button v-if="upd.url" size="small" quaternary tag="a" :href="upd.url" target="_blank">发布页</n-button>
+          </n-space>
+          <pre v-if="showNotes" style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; margin: 0">{{ upd.notes }}</pre>
+        </n-space>
+        <n-form v-if="cfg.update" label-placement="left" label-width="140" style="margin-top: 12px">
+          <n-form-item label="自动检查"><n-switch v-model:value="cfg.update.check" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">每 {{ cfg.update.checkIntervalHours }} 小时</n-text></n-form-item>
+          <n-form-item label="自动安装"><n-switch v-model:value="cfg.update.autoInstall" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">发现新版本自动下载，由 start.bat 启动时随即重启完成更新</n-text></n-form-item>
+          <n-form-item label="包含预发布版"><n-switch v-model:value="cfg.update.prerelease" /></n-form-item>
+          <n-form-item label="代理"><n-input v-model:value="cfg.update.proxy" placeholder="留空读取 HTTPS_PROXY，如 http://127.0.0.1:7890" /></n-form-item>
+          <n-form-item label="下载加速"><n-input v-model:value="cfg.update.mirror" placeholder="可选，GitHub 下载加速前缀，如 https://ghfast.top/" /></n-form-item>
+          <n-form-item label="通知管理员"><n-switch v-model:value="cfg.update.notifyOwner" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">发现新版本时私聊管理员</n-text></n-form-item>
+        </n-form>
+      </n-card>
+
       <n-card title="QQ 协议端（OneBot v11）" size="small">
         <n-form label-placement="left" label-width="140">
           <n-form-item label="自动发现"><n-switch v-model:value="cfg.onebot.autoDiscover" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">从 SnowLuma 配置自动读取端口与 token，切换账号无需改配置</n-text></n-form-item>

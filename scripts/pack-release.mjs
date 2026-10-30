@@ -5,7 +5,7 @@
  *   - 附带预构建的控制台（console/dist），用户解压后无需构建
  *   - --with-deps：再打一份带生产依赖的包（-win-x64.zip 等），装好 Node 24 解压即用
  *
- * 用法：node scripts/pack-release.mjs [--with-deps] [--skip-build]
+ * 用法：node scripts/pack-release.mjs [--with-deps [--no-generic]] [--skip-build]
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -60,6 +60,8 @@ if (args.has('--with-deps')) {
   fs.renameSync(stage, withDeps);
   zip(withDeps, path.join(outDir, `${name}-${plat}.zip`));
   fs.rmSync(withDeps, { recursive: true, force: true });
+  // CI 多平台并行打包时，通用包只需要一个平台上传
+  if (args.has('--no-generic')) fs.rmSync(path.join(outDir, `${name}.zip`), { force: true });
 } else {
   fs.rmSync(stage, { recursive: true, force: true });
 }

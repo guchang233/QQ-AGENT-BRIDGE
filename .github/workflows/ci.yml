@@ -2,8 +2,12 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -27,6 +31,31 @@ jobs:
       - name: 构建控制台
         run: npm --prefix console ci && npm --prefix console run build
       - name: 参考文档是否最新
+        shell: bash
         run: |
           npm run docs:gen
           git diff --exit-code -- docs/tools.md docs/system-plugins.md || (echo "请运行 npm run docs:gen 并提交" && exit 1)
+
+  # 每次推送到 main 自动构建发布包（在 Actions 页面的 Artifacts 里下载，保留 14 天）
+  build:
+    needs: check
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: 打包
+        run: node scripts/pack-release.mjs --with-deps
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qq-agent-bridge-${{ matrix.os }}-${{ github.sha }}
+          path: release/*.zip
+          retention-days: 14

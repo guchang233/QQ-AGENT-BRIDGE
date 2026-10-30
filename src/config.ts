@@ -139,6 +139,22 @@ export const ConfigSchema = z.object({
     /** 覆盖默认价目：{ models: { 'model-id': { cacheHit, cacheMiss, output } }, peakMultiplier, ... } */
     prices: z.record(z.string(), z.any()).default({}),
   }).prefault({}),
+  update: z.object({
+    /** 定时检查 GitHub Release 新版本 */
+    check: z.boolean().default(true),
+    checkIntervalHours: z.number().min(1).default(6),
+    /** 发现新版本后自动下载并在重启时安装（仅发布包安装方式；由 start.bat/start.sh 启动时会立即重启） */
+    autoInstall: z.boolean().default(false),
+    /** 包含预发布版本 */
+    prerelease: z.boolean().default(false),
+    repo: z.string().default('guchang233/QQ-AGENT-BRIDGE'),
+    /** 访问 GitHub 用的 HTTP 代理（留空 = 读取 HTTPS_PROXY 环境变量） */
+    proxy: z.string().default(''),
+    /** 下载加速前缀（如 https://ghfast.top/ ），只作用于安装包下载 */
+    mirror: z.string().default(''),
+    /** 发现新版本时私聊通知管理员 */
+    notifyOwner: z.boolean().default(false),
+  }).prefault({}),
   dataDir: z.string().default('data'),
 });
 export type Config = z.infer<typeof ConfigSchema>;
