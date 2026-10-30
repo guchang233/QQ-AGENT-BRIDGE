@@ -53,13 +53,14 @@ zip(stage, path.join(outDir, `${name}.zip`));
 
 // 4. 可选：带依赖的免安装包（依赖含平台相关的 esbuild，只适用于当前平台）
 if (args.has('--with-deps')) {
-  run('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: stage });
   const plat = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
   const withDeps = path.join(outDir, `${name}-${plat}`);
   fs.rmSync(withDeps, { recursive: true, force: true });
+  // 先改名再装依赖：Windows 上刚装完的 node_modules 常被杀毒扫描占用，改名会 EPERM
   fs.renameSync(stage, withDeps);
+  run('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: withDeps });
   zip(withDeps, path.join(outDir, `${name}-${plat}.zip`));
-  fs.rmSync(withDeps, { recursive: true, force: true });
+  try { fs.rmSync(withDeps, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }); } catch { /* 清理失败不影响结果 */ }
   // CI 多平台并行打包时，通用包只需要一个平台上传
   if (args.has('--no-generic')) fs.rmSync(path.join(outDir, `${name}.zip`), { force: true });
 } else {
