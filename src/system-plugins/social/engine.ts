@@ -54,6 +54,8 @@ export interface EngineConfig {
   defaultMode: 'active' | 'diving';
   triggers: Triggers;
   batchWindowMs: number;
+  /** 私聊 / @我 / 戳我 时的等待窗口 */
+  directWindowMs: number;
   maxWakePerMinute: number;
   maxWakePerHour: number;
   noActionLimit: number;
@@ -107,10 +109,15 @@ export function evaluate(s: ConvState, m: IncomingInfo, names: string[], now = D
 }
 
 /** 安排一次唤醒（批量窗口内只升级原因）。 */
+/** 直接对话（私聊 / @我 / 戳我）：对方在等你，用短窗口；群聊闲聊用长窗口合并连续消息。 */
+const DIRECT = new Set(['private', 'atMention', 'poke']);
+const windowOf = (reason: string, c: EngineConfig) => (reason === 'manual' ? 0 : DIRECT.has(reason) ? c.directWindowMs : c.batchWindowMs);
+
 export function schedule(s: ConvState, reason: string, c: EngineConfig, now = Date.now()) {
-  if (!s.pending) { s.pending = { reason, dueAt: now + (reason === 'manual' ? 0 : c.batchWindowMs), since: now }; return; }
+  if (!s.pending) { s.pending = { reason, dueAt: now + windowOf(reason, c), since: now }; return; }
   if ((PRIORITY[reason] ?? 0) > (PRIORITY[s.pending.reason] ?? 0)) s.pending.reason = reason;
-  if (reason === 'manual' || reason === 'private') s.pending.dueAt = Math.min(s.pending.dueAt, now + (reason === 'manual' ? 0 : 3000));
+  // 更急的触发可以提前唤醒时间；同一窗口内的普通消息不延长等待
+  s.pending.dueAt = Math.min(s.pending.dueAt, now + windowOf(reason, c));
 }
 
 export function rateOk(s: ConvState, c: EngineConfig, now = Date.now()) {

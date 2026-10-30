@@ -184,9 +184,11 @@ export class Policy extends EventEmitter {
   }
 
   /** 模拟打字节奏的条间延迟。 */
+  /** 拟人的条间间隔：按下一条的字数模拟打字时间，再加 ±25% 的随机抖动。 */
   gapFor(textLen: number): number {
     const l = this.cfg().limits;
-    return Math.min(l.gapMaxMs, l.gapBaseMs + l.gapPerCharMs * textLen);
+    const base = Math.min(l.gapMaxMs, l.gapBaseMs + l.gapPerCharMs * textLen);
+    return Math.round(base * (0.75 + Math.random() * 0.5));
   }
 
   tierAllowed(caller: Caller, tier: Tier): boolean {

@@ -21,6 +21,8 @@ const AgentTokenSchema = z.object({
   enabled: z.boolean().default(true),
   /** 会话绑定：每次工具调用都必须带 convToken（由驱动在唤醒提示词里下发），权限收窄到该会话 */
   sessionBound: z.boolean().default(false),
+  /** 工具白名单：非空时只提供这些工具（减少提示词体积，加快响应、降低费用） */
+  toolAllow: z.array(z.string()).default([]),
 });
 export type AgentToken = z.infer<typeof AgentTokenSchema>;
 
@@ -67,6 +69,10 @@ export const ConfigSchema = z.object({
     gapBaseMs: z.number().default(800),
     gapPerCharMs: z.number().default(25),
     gapMaxMs: z.number().default(6000),
+    /** Agent 一条消息里写了多行时，自动按行拆成多条逐条发送（更像真人） */
+    autoSplit: z.boolean().default(true),
+    /** 自动拆分最多几条（超过则不拆，按原样发一条） */
+    autoSplitMax: z.number().default(6),
   }).prefault({}),
   agents: z.object({
     tokens: z.array(AgentTokenSchema).default([]),
@@ -155,7 +161,7 @@ export function loadConfig(file = CONFIG_PATH): { config: Config; created: boole
   let dirty = created;
   if (!config.server.sessionSecret) { config.server.sessionSecret = randomToken(32); dirty = true; }
   if (config.agents.tokens.length === 0) {
-    config.agents.tokens.push({ name: 'default', token: `qab_${randomToken(24)}`, tiers: ['read', 'send', 'manage', 'danger'], groups: [], private: [], enabled: true, sessionBound: false });
+    config.agents.tokens.push({ name: 'default', token: `qab_${randomToken(24)}`, tiers: ['read', 'send', 'manage', 'danger'], groups: [], private: [], enabled: true, sessionBound: false, toolAllow: [] });
     dirty = true;
   }
   // 旧版默认工作区名 → 与 qq-bridge 一致的「QQ 聊天」

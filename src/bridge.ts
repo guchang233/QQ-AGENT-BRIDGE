@@ -320,9 +320,14 @@ export class Bridge extends EventEmitter {
     const c = typeof convIn === 'string' ? parseConv(convIn) : convIn;
     const conv = convKey(c);
     this.policy.assertConv(caller, c);
-    const parts = typeof content === 'string'
+    let parts: (string | Segment[])[] = typeof content === 'string'
       ? (opts.burst ? content.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean) : [content])
       : [content];
+    // Agent 把几句话写在一条消息里（多行）：自动按行拆成多条，逐条发送
+    if (typeof content === 'string' && !opts.burst && caller.kind === 'agent' && this.config.limits.autoSplit) {
+      const lines = splitLines(content);
+      if (lines.length >= 2 && lines.length <= this.config.limits.autoSplitMax) parts = lines;
+    }
     if (!parts.length) throw new Error('消息内容为空');
     const total = parts.reduce((n, p) => n + (typeof p === 'string' ? p.length : plainText(p).length), 0);
     if (total > this.config.limits.maxMessageChars * parts.length) throw new Error(`消息过长（${total} 字），上限 ${this.config.limits.maxMessageChars} 字/条`);
@@ -330,7 +335,11 @@ export class Bridge extends EventEmitter {
       this.policy.checkSendRate(caller, conv, parts.length);
       const ids: string[] = [];
       for (let i = 0; i < parts.length; i++) {
-        if (i > 0) await sleep(this.policy.gapFor(typeof parts[i] === 'string' ? (parts[i] as string).length : 20));
+        if (i > 0) {
+          // 间隔期间（私聊）显示「对方正在输入…」
+          if (c.type === 'private') this.bot.call('set_input_status', { user_id: Number(c.id), event_type: 1 }).catch(() => {});
+          await sleep(this.policy.gapFor(typeof parts[i] === 'string' ? (parts[i] as string).length : 20));
+        }
         const { segments, uploads } = typeof parts[i] === 'string' ? await this.buildSegments(parts[i] as string) : { segments: parts[i] as Segment[], uploads: [] };
         if (i === 0 && opts.replyTo) segments.unshift({ type: 'reply', data: { id: String(opts.replyTo) } });
         if (i === 0 && opts.atSender && c.type === 'group') segments.splice(opts.replyTo ? 1 : 0, 0, { type: 'at', data: { qq: opts.atSender } }, textSeg(' '));
@@ -528,6 +537,19 @@ export function oneLine(v: string, max: number) {
   const s = String(v ?? '').replace(WS_RE, ' ').replace(CTRL_RE, '').trim();
   return [...s].slice(0, max).join('');
 }
+/**
+ * 把多行文本拆成多条消息：按换行切分，去掉空行；含代码块、列表或标签跨行时不拆。
+ * 单独一行的内联标记（如 [sticker:3]）作为独立一条。
+ */
+export function splitLines(text: string): string[] {
+  if (/```/.test(text)) return [text];
+  const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (lines.some((l) => /^([-*•]|\d+[.、)])\s/.test(l))) return [text]; // 列表保持一条
+  // 未闭合的 [ 跨行（标签被换行截断）时不拆
+  if (lines.some((l) => (l.match(/(?<!\\)\[/g)?.length ?? 0) > (l.match(/(?<!\\)\]/g)?.length ?? 0))) return [text];
+  return lines;
+}
+
 function mergeText(segs: Segment[]): Segment[] {
   const out: Segment[] = [];
   for (const s of segs) {

@@ -133,6 +133,15 @@ describe('收发消息', () => {
     expect(mock.calls.filter((c) => c.action === 'send_private_msg').length).toBe(3);
   });
 
+  it('Agent 的多行消息自动拆成多条逐条发送，私聊间隔中显示正在输入', async () => {
+    mock.calls.length = 0;
+    mock.handlers.set_input_status = () => null;
+    const r = await client.callTool({ name: 'qq_send', arguments: { conv: 'private:20001', message: '第一句\n第二句\n第三句' } });
+    expect(r.isError).toBeFalsy();
+    expect(mock.calls.filter((c) => c.action === 'send_private_msg').length).toBe(3);
+    expect(mock.calls.some((c) => c.action === 'set_input_status')).toBe(true);
+  });
+
   it('黑名单会话发送被拒绝且明确报错', async () => {
     const r = await client.callTool({ name: 'qq_send', arguments: { conv: 'group:999', message: 'hi' } });
     expect(r.isError).toBe(true);

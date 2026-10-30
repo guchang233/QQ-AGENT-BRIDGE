@@ -4,7 +4,8 @@ import { parseDsl } from '../src/message/dsl.ts';
 import { parseCQ, parseConv } from '../src/message/segments.ts';
 import { renderSegments } from '../src/message/render.ts';
 import { matchCommand } from '../src/plugins/host.ts';
-import { oneLine } from '../src/bridge.ts';
+import { oneLine, splitLines } from '../src/bridge.ts';
+import { newState, schedule as scheduleWake } from '../src/system-plugins/social/engine.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
 import { parseWhen } from '../src/system-plugins/scheduler/index.ts';
 import { actionTier } from '../src/onebot/catalog.ts';
@@ -64,6 +65,25 @@ describe('杂项', () => {
   it('SSRF：内网地址判定', () => {
     for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '::1', 'fd00::1', '::ffff:127.0.0.1', '0.0.0.0']) expect(isPrivateIp(ip)).toBe(true);
     for (const ip of ['8.8.8.8', '1.1.1.1', '2400:3200::1']) expect(isPrivateIp(ip)).toBe(false);
+  });
+  it('多行消息自动拆分', () => {
+    expect(splitLines('哈哈哈\n笑死我了\n[sticker:3]')).toEqual(['哈哈哈', '笑死我了', '[sticker:3]']);
+    expect(splitLines('一句话')).toEqual(['一句话']);
+    expect(splitLines('步骤：\n1. 打开\n2. 关闭')).toHaveLength(1);            // 列表不拆
+    expect(splitLines('看代码\n```js\nx\n```')).toHaveLength(1);              // 代码块不拆
+    expect(splitLines('[share:https://a.com|title=很长\n的标题]')).toHaveLength(1); // 标签跨行不拆
+  });
+  it('直接对话用短等待窗口，群聊闲聊用长窗口', () => {
+    const c: any = { defaultMode: 'diving', triggers: { atMention: true, nameMention: true, question: true, poke: true, keywords: [], speakerIds: [], probability: 0 },
+      batchWindowMs: 8000, directWindowMs: 2000, maxWakePerMinute: 9, maxWakePerHour: 99, noActionLimit: 3, replyCheckMs: 0, proactive: { enabled: false } };
+    const t = 1_000_000;
+    const a = newState('private:1', c, t); scheduleWake(a, 'private', c, t);
+    expect(a.pending!.dueAt).toBe(t + 2000);
+    const b = newState('group:1', c, t); scheduleWake(b, 'keyword', c, t);
+    expect(b.pending!.dueAt).toBe(t + 8000);
+    scheduleWake(b, 'atMention', c, t + 1000);                                   // 窗口内被 @：提前
+    expect(b.pending!.dueAt).toBe(t + 3000);
+    expect(b.pending!.reason).toBe('atMention');
   });
   it('动作分级', () => {
     expect(actionTier('get_group_list')).toBe('read');

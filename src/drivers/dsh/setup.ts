@@ -19,6 +19,20 @@ const DSH_TOKEN_NAME = 'dsh';
 /** stdio 代理的修订号；修改代理逻辑时递增 */
 const PROXY_REV = '3';
 
+/** DSH 仿真会话只需要聊天相关的工具（群管理/文件/底层动作等不提供，提示词更小、响应更快） */
+export const DSH_TOOLS = [
+  'qq_status', 'qq_get_unread', 'qq_wait_messages', 'qq_get_history', 'qq_search_messages', 'qq_get_message', 'qq_get_forward',
+  'qq_send', 'qq_reply', 'qq_send_burst', 'qq_recall', 'qq_send_image', 'qq_get_image', 'qq_ocr',
+  'qq_get_user', 'qq_list_members', 'qq_search_face', 'qq_react', 'qq_poke',
+  'qq_list_stickers', 'qq_send_sticker', 'qq_collect_sticker', 'qq_sticker_note',
+  'qq_speak', 'qq_transcribe',
+  'qq_memory_remember', 'qq_memory_recall', 'qq_memory_context', 'qq_memory_update',
+  'qq_set_wake', 'qq_social_state', 'qq_get_persona',
+  'qq_web_search', 'qq_web_fetch',
+  'qq_schedule', 'qq_schedule_list', 'qq_schedule_cancel',
+  'qq_qzone_feeds', 'qq_qzone_list',
+];
+
 export interface SetupStatus {
   dshHome: string; profile: string; profileDir: string; profileExists: boolean;
   mcpRegistered: boolean; bundleRegistered: boolean; bundleLinked: boolean;
@@ -129,13 +143,14 @@ export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; res
   const cfg = structuredClone(bridge.config);
   let tok = cfg.agents.tokens.find((t) => t.name === DSH_TOKEN_NAME);
   if (!tok) {
-    tok = { name: DSH_TOKEN_NAME, token: `qab_${randomToken(24)}`, tiers: ['read', 'send'], groups: [], private: [], enabled: true, sessionBound: true };
+    tok = { name: DSH_TOKEN_NAME, token: `qab_${randomToken(24)}`, tiers: ['read', 'send'], groups: [], private: [], enabled: true, sessionBound: true, toolAllow: [...DSH_TOOLS] };
     cfg.agents.tokens.push(tok);
     steps.push('创建 Agent token「dsh」（会话绑定，权限：读取+发送）');
   } else if (!tok.sessionBound || !tok.enabled) {
     tok.sessionBound = true; tok.enabled = true;
     steps.push('已将 token「dsh」设为会话绑定');
   }
+  if (!tok.toolAllow?.length) { tok.toolAllow = [...DSH_TOOLS]; steps.push(`DSH 只提供 ${DSH_TOOLS.length} 个聊天相关工具（可在 config 的 agents.tokens 中调整）`); }
   cfg.drivers.dsh.enabled = true;
   cfg.drivers.dsh.preset = PRESET_ID;
   bridge.updateConfig(cfg);

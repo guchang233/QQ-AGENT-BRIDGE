@@ -32,7 +32,9 @@ export default definePlugin({
     poke: { type: 'bool', default: true, description: '被戳时唤醒', group: '唤醒' },
     keywords: { type: 'list', default: [], description: '关键词（命中即唤醒）', group: '唤醒' },
     probability: { type: 'float', default: 0.05, min: 0, max: 1, description: '潜水时普通消息的随机唤醒概率', group: '唤醒' },
-    batchWindowSec: { type: 'int', default: 8, description: '批量窗口（秒）：收到触发后等一会儿再唤醒，把连续消息合并', group: '唤醒' },
+    batchWindowSec: { type: 'int', default: 8, description: '群聊批量窗口（秒）：收到触发后等一会儿再唤醒，把连续消息合并', group: '唤醒' },
+    directWindowSec: { type: 'float', default: 2, min: 0, max: 30, description: '私聊 / @我 / 戳我 时的等待秒数（对方在等你回复，越短越快）', group: '唤醒' },
+    typingIndicator: { type: 'bool', default: true, description: '私聊中 AI 思考与分条发送期间显示「对方正在输入…」', group: '节奏' },
     maxWakePerMinute: { type: 'int', default: 2, description: '每会话每分钟最多唤醒次数', group: '唤醒' },
     maxWakePerHour: { type: 'int', default: 20, description: '每会话每小时最多唤醒次数', group: '唤醒' },
     noActionLimit: { type: 'int', default: 3, description: '连续多少轮什么都没做就恢复默认配置', group: '唤醒' },
@@ -58,7 +60,7 @@ export default definePlugin({
     const engineCfg = (): EngineConfig => ({
       defaultMode: c.defaultMode as 'diving' | 'active',
       triggers: { atMention: c.atMention, nameMention: c.nameMention, question: c.question, poke: c.poke, keywords: c.keywords, speakerIds: [], probability: c.probability },
-      batchWindowMs: c.batchWindowSec * 1000, maxWakePerMinute: c.maxWakePerMinute, maxWakePerHour: c.maxWakePerHour, noActionLimit: c.noActionLimit,
+      batchWindowMs: c.batchWindowSec * 1000, directWindowMs: c.directWindowSec * 1000, maxWakePerMinute: c.maxWakePerMinute, maxWakePerHour: c.maxWakePerHour, noActionLimit: c.noActionLimit,
       replyCheckMs: c.replyCheckSec * 1000,
       proactive: { enabled: c.proactive, idleMs: c.proactiveIdleMinutes * 60_000, checkMinMs: c.proactiveCheckMinutes * 30_000, checkMaxMs: c.proactiveCheckMinutes * 90_000, probability: c.proactiveProbability },
     });
@@ -109,7 +111,7 @@ export default definePlugin({
       if (reason) {
         const had = !!s.pending;
         schedule(s, reason, engineCfg());
-        if (!had) bridge.activity({ kind: 'trigger', conv: m.conv, actor: m.senderName, title: `触发唤醒：${REASON_LABEL[reason] ?? reason}`, detail: `${c.batchWindowSec} 秒后唤醒（期间的新消息会合并）` });
+        if (!had) bridge.activity({ kind: 'trigger', conv: m.conv, actor: m.senderName, title: `触发唤醒：${REASON_LABEL[reason] ?? reason}`, detail: `${Math.round((s.pending!.dueAt - Date.now()) / 100) / 10} 秒后唤醒（期间的新消息会合并）` });
       }
       save(m.conv);
     });
@@ -127,6 +129,7 @@ export default definePlugin({
         save(conv);
         firing.add(conv);
         fire(conv, reason).catch((e) => {
+          stopTyping(conv);
           ctx.logger.warn(`唤醒 ${conv} 失败：${e.message}`);
           bridge.activity({ kind: 'error', level: 'error', conv, actor: 'DSH', title: '唤醒失败，1 分钟后重试', detail: e.message });
           if (!s.pending) s.pending = { reason, dueAt: Date.now() + 60_000, since: Date.now() }; // 稍后重试，不丢唤醒
@@ -134,9 +137,24 @@ export default definePlugin({
       }
     }, 1000);
 
+    // 「对方正在输入…」：私聊中从唤醒到回合结束，每 4 秒刷新一次（最长 3 分钟）
+    const typing = new Map<string, NodeJS.Timeout>();
+    const stopTyping = (conv: string) => { clearInterval(typing.get(conv)); typing.delete(conv); };
+    const startTyping = (conv: string) => {
+      if (!c.typingIndicator || !conv.startsWith('private:')) return;
+      stopTyping(conv);
+      const uid = Number(conv.slice(8));
+      const ping = () => bridge.bot.call('set_input_status', { user_id: uid, event_type: 1 }).catch(() => {});
+      void ping();
+      const started = Date.now();
+      typing.set(conv, setInterval(() => (Date.now() - started > 180_000 ? stopTyping(conv) : void ping()), 4000));
+    };
+    ctx.onUnload(() => { for (const k of [...typing.keys()]) stopTyping(k); });
+
     async function fire(conv: string, reason: string) {
       const d = driver();
       if (!d) throw new Error(`驱动「${c.driver}」不可用`);
+      startTyping(conv);
       const prompt = await buildPrompt(conv, reason);
       ctx.logger.info(`唤醒 ${conv}（${REASON_LABEL[reason] ?? reason}）`);
       await d.wake({ conv, reason, prompt });
@@ -218,6 +236,7 @@ export default definePlugin({
       if (!d || (d as any).__socialAttached) return;
       (d as any).__socialAttached = true;
       const onEnd = async (conv: string, r: TurnResult) => {
+        stopTyping(conv);
         if (!enabled.has(conv)) return;
         const s = stateOf(conv);
         const { sent, reset } = onTurnEnd(s, engineCfg(), r.tools);

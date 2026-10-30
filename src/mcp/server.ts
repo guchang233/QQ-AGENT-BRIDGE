@@ -44,7 +44,7 @@ export function createMcpServer(bridge: Bridge, caller: Caller): McpServer {
   const all = [...buildTools(), ...extraTools.values()];
   const bound = !!caller.token?.sessionBound;
   for (const t of all) {
-    if (disabled.has(t.name) || !tiers.includes(t.tier)) continue;
+    if (disabled.has(t.name) || !tiers.includes(t.tier) || (caller.token?.toolAllow?.length && !caller.token.toolAllow.includes(t.name))) continue;
     server.registerTool(t.name, {
       title: t.title,
       description: t.description,
@@ -84,7 +84,8 @@ export function toolsFor(bridge: Bridge, caller: Caller) {
   const disabled = new Set(bridge.config.agents.disabledTools);
   const tiers = caller.token?.tiers ?? ['read', 'send', 'manage', 'danger'];
   const bound = !!caller.token?.sessionBound;
-  return [...buildTools(), ...extraTools.values()].filter((t) => !disabled.has(t.name) && tiers.includes(t.tier)).map((t) => {
+  const allow = caller.token?.toolAllow ?? [];
+  return [...buildTools(), ...extraTools.values()].filter((t) => !disabled.has(t.name) && tiers.includes(t.tier) && (!allow.length || allow.includes(t.name))).map((t) => {
     const shape = bound ? { ...t.input, convToken: z.string().describe('会话令牌（见提示词【会话令牌】），每次调用都必须原样传入') } : t.input;
     return {
       name: t.name, title: t.title, description: t.description,
@@ -97,7 +98,8 @@ export function toolsFor(bridge: Bridge, caller: Caller) {
 export async function callToolStateless(bridge: Bridge, caller: Caller, name: string, rawArgs: unknown): Promise<ToolResult> {
   const t = (buildTools().find((x) => x.name === name) ?? extraTools.get(name));
   const tiers = caller.token?.tiers ?? ['read', 'send', 'manage', 'danger'];
-  if (!t || bridge.config.agents.disabledTools.includes(name) || !tiers.includes(t.tier)) return { content: [{ type: 'text', text: `错误：工具 ${name} 不存在或无权使用，操作未执行` }], isError: true };
+  const allow = caller.token?.toolAllow ?? [];
+  if (!t || bridge.config.agents.disabledTools.includes(name) || !tiers.includes(t.tier) || (allow.length && !allow.includes(name))) return { content: [{ type: 'text', text: `错误：工具 ${name} 不存在或无权使用，操作未执行` }], isError: true };
   let args: any = rawArgs ?? {};
   if (caller.token?.sessionBound) {
     const { convToken, ...rest } = args;

@@ -219,7 +219,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   app.post('/api/tokens', async (req) => {
     const b = req.body as { name: string; tiers?: string[]; groups?: string[]; private?: string[] };
     const cfg = structuredClone(bridge.config);
-    const t = { name: b.name || `agent-${cfg.agents.tokens.length + 1}`, token: `qab_${randomToken(24)}`, tiers: (b.tiers ?? ['read', 'send']).filter((x): x is typeof TIERS[number] => (TIERS as readonly string[]).includes(x)), groups: b.groups ?? [], private: b.private ?? [], enabled: true, sessionBound: !!(b as any).sessionBound };
+    const t = { name: b.name || `agent-${cfg.agents.tokens.length + 1}`, token: `qab_${randomToken(24)}`, tiers: (b.tiers ?? ['read', 'send']).filter((x): x is typeof TIERS[number] => (TIERS as readonly string[]).includes(x)), groups: b.groups ?? [], private: b.private ?? [], enabled: true, sessionBound: !!(b as any).sessionBound, toolAllow: (b as any).toolAllow ?? [] };
     cfg.agents.tokens.push(t);
     bridge.updateConfig(cfg);
     return t;
