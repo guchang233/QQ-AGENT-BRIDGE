@@ -10,6 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { zipDir } from './zip.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const args = new Set(process.argv.slice(2));
@@ -41,12 +42,10 @@ for (const d of ['.github', 'test', 'vitest.config.ts']) fs.rmSync(path.join(sta
 // 2. 预构建控制台
 fs.cpSync(path.join(root, 'console/dist'), path.join(stage, 'console/dist'), { recursive: true });
 
-// 3. 打 zip（Windows 10+ 与 macOS/Linux 的 bsdtar 都支持 -a）
+// 3. 打 zip（纯 Node 实现，见 scripts/zip.mjs）
 const zip = (dir, file) => {
   fs.rmSync(file, { force: true });
-  const z = isWin ? TAR : (() => { try { execFileSync('bsdtar', ['--version']); return 'bsdtar'; } catch { return null; } })();
-  if (z) execFileSync(z, ['-a', '-c', '-f', file, path.basename(dir)], { cwd: path.dirname(dir), stdio: 'inherit' });
-  else execFileSync('zip', ['-qr', file, path.basename(dir)], { cwd: path.dirname(dir), stdio: 'inherit' });
+  zipDir(dir, file);
   console.log(`✔ ${path.relative(root, file)}（${(fs.statSync(file).size / 1048576).toFixed(1)} MB）`);
 };
 zip(stage, path.join(outDir, `${name}.zip`));

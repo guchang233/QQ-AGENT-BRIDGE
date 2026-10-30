@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { compareVersions, pickAsset, platformTag, extractZip } from '../src/update/index.ts';
 // @ts-expect-error 纯 JS 模块
 import { applyPendingUpdate } from '../bin/apply-update.mjs';
+// @ts-expect-error 纯 JS 模块
+import { zipDir } from '../scripts/zip.mjs';
 
 const write = (f: string, s: string) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, s); };
 const read = (f: string) => fs.readFileSync(f, 'utf8');
@@ -79,14 +80,18 @@ describe('自动更新', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it.runIf(process.platform === 'win32')('解压 zip', () => {
+  it('打包 zip（纯 Node）后可被系统工具解压，保留可执行权限', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qab-zip-'));
-    write(path.join(root, 'pkg/a/b.txt'), 'hi');
-    const tar = path.join(process.env.SystemRoot ?? 'C:\Windows', 'System32', 'tar.exe');
-    execFileSync(tar, ['-a', '-c', '-f', path.join(root, 'p.zip'), 'pkg'], { cwd: root });
+    write(path.join(root, 'pkg/a/b.txt'), '你好');
+    write(path.join(root, 'pkg/bin/tool'), '#!/bin/sh');
+    fs.chmodSync(path.join(root, 'pkg/bin/tool'), 0o755);
+    write(path.join(root, 'pkg/big.txt'), 'x'.repeat(100_000));
+    zipDir(path.join(root, 'pkg'), path.join(root, 'p.zip'));
     fs.mkdirSync(path.join(root, 'out'));
     extractZip(path.join(root, 'p.zip'), path.join(root, 'out'));
-    expect(read(path.join(root, 'out/pkg/a/b.txt'))).toBe('hi');
+    expect(read(path.join(root, 'out/pkg/a/b.txt'))).toBe('你好');
+    expect(read(path.join(root, 'out/pkg/big.txt'))).toHaveLength(100_000);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(root, 'out/pkg/bin/tool')).mode & 0o111).toBeTruthy();
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
