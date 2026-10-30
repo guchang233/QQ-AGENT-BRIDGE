@@ -95,6 +95,8 @@ export interface MessageEvent {
   react(emoji: string): Promise<void>;
   /** 阻止后续插件处理该消息 */
   stop(): void;
+  /** 标记为"已处理"：阻止后续插件，且不再唤醒仿真 AI（命令处理器会自动调用） */
+  consume(): void;
   readonly stopped: boolean;
 }
 

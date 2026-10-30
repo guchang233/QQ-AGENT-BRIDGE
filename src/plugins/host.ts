@@ -387,6 +387,7 @@ export class PluginHost extends EventEmitter {
         await bridge.bot.call('set_msg_emoji_like', { message_id: Number(m.msgId), emoji_id: String(id), set: true });
       },
       stop: () => { stopped = true; },
+      consume: () => { stopped = true; bridge.consume(m.conv, m.msgId); },
       get stopped() { return stopped; },
     };
   }
@@ -413,6 +414,7 @@ export class PluginHost extends EventEmitter {
         if (!hit) continue;
         Object.defineProperty(e, 'argText', { value: hit.argText });
         Object.defineProperty(e, 'args', { value: hit.argText ? hit.argText.split(/\s+/) : [] });
+        this.bridge.consume(m.conv, m.msgId); // 命令不唤醒仿真 AI
       } else if (h.kind === 'regex') {
         const mm = base.text.match(h.re!);
         if (!mm) continue;

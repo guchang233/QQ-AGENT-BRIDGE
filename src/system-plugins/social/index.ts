@@ -86,6 +86,14 @@ export default definePlugin({
     ctx.onUnload(() => { for (const k of dirty) ctx.kv.set(`state:${k}`, { ...states.get(k), pending: null }); });
 
     const driver = () => bridge.drivers.get(c.driver);
+    /** 待告知 AI 的系统通知（如管理员对请示的答复），下次唤醒时附在提示词里 */
+    const notes = new Map<string, string[]>();
+    const addNote = (conv: string, text: string, wake = true) => {
+      const l = notes.get(conv) ?? [];
+      l.push(text);
+      notes.set(conv, l.slice(-10));
+      if (wake && enabled.has(conv)) schedule(stateOf(conv), 'adminReply', engineCfg());
+    };
     const roleOf = (conv: string) => {
       const b = c.roleBindings.map((l) => l.split('=>')).find(([k]) => k && convKey(parseConv(k.trim())) === conv);
       return b?.[1]?.trim() || c.defaultRole || '默认群友';
@@ -102,6 +110,11 @@ export default definePlugin({
     // ------------------------------------------------------------ 消息 → 唤醒判定
     ctx.on('message', (m: StoredMessage) => {
       if (!enabled.has(m.conv)) return;
+      // 稍等插件处理：被命令/请示答复等"消费"的消息不唤醒 AI
+      ctx.setTimeout(() => onIncoming(m), 400);
+    });
+    const onIncoming = (m: StoredMessage) => {
+      if (bridge.isConsumed(m.conv, m.msgId)) return;
       const s = stateOf(m.conv);
       s.lastIncomingAt = Date.now();
       const reason = evaluate(s, {
@@ -114,7 +127,7 @@ export default definePlugin({
         if (!had) bridge.activity({ kind: 'trigger', conv: m.conv, actor: m.senderName, title: `触发唤醒：${REASON_LABEL[reason] ?? reason}`, detail: `${Math.round((s.pending!.dueAt - Date.now()) / 100) / 10} 秒后唤醒（期间的新消息会合并）` });
       }
       save(m.conv);
-    });
+    };
 
     // ------------------------------------------------------------ 统一调度器
     const firing = new Set<string>();
@@ -183,6 +196,11 @@ export default definePlugin({
         if (!dry) s.roleVersion = ver;
       } else parts.push(`【人格】${role}（与之前相同，保持即可）`);
       parts.push(`【当前唤醒】${REASON_LABEL[reason] ?? reason}`);
+      const pendingNotes = notes.get(conv);
+      if (pendingNotes?.length) {
+        parts.push(`【系统通知】\n${pendingNotes.map((n) => `- ${n}`).join('\n')}`);
+        if (!dry) notes.delete(conv);
+      }
 
       // 新消息快照：按时间从旧到新装填，超出上限截断；只把展示过的消息标为已读（防漏看）
       const unread = bridge.store.unread(conv, 200);
@@ -379,7 +397,7 @@ export default definePlugin({
     ctx.route('PUT', 'roles/:name', ({ params, body }) => ({ name: roles.save(params.name, String(body?.content ?? '')) }));
     ctx.route('DELETE', 'roles/:name', ({ params }) => { roles.remove(params.name); return { ok: true }; });
     ctx.route('GET', 'preview/:conv', async ({ params }) => ({ prompt: await buildPrompt(convKey(parseConv(params.conv)), 'manual', true) }));
-    ctx.provide({ stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
+    ctx.provide({ addNote, stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
     if (enabled.size) ctx.logger.info(`仿真已在 ${enabled.size} 个会话启用（驱动：${c.driver}）`);
   },
 });

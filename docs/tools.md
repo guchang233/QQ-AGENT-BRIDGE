@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-> 本文件由 `npm run docs:gen` 自动生成，请勿手改。共 72 个工具（核心 50，系统插件 22）。
+> 本文件由 `npm run docs:gen` 自动生成，请勿手改。共 73 个工具（核心 50，系统插件 23）。
 
 Agent 只会看到其 token 权限等级内、且未在控制台禁用的工具。等级说明见 [agent-guide.md](agent-guide.md)。
 
@@ -669,41 +669,6 @@ Agent 只会看到其 token 权限等级内、且未在控制台禁用的工具�
 |---|---|---|---|
 | `scope` | string |  |  |
 
-### `qq_schedule` — 定时发送
-
-等级：**发送**　来源插件：`scheduler`
-
-安排一条定时消息（提醒、早安问候等）。三选一指定时间：at（ISO 时间或"10分钟后/明天8点"）、delayMinutes、cron（周期，如 "0 8 * * *" 每天 8 点）。消息支持内联标记。
-
-| 参数 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `conv` | string | 是 |  |
-| `message` | string | 是 |  |
-| `at` | string |  |  |
-| `delayMinutes` | number |  |  |
-| `cron` | string |  |  |
-| `mentionUser` | string,number |  | 发送时 @ 的人 |
-
-### `qq_schedule_list` — 定时任务列表
-
-等级：**读取**（只读）　来源插件：`scheduler`
-
-列出待执行的定时消息。
-
-| 参数 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `conv` | string |  |  |
-
-### `qq_schedule_cancel` — 取消定时任务
-
-等级：**发送**　来源插件：`scheduler`
-
-取消一个定时消息。
-
-| 参数 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | integer | 是 |  |
-
 ### `qq_set_wake` — 设置唤醒方式
 
 等级：**发送**　来源插件：`social`
@@ -738,6 +703,57 @@ Agent 只会看到其 token 权限等级内、且未在控制台禁用的工具�
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `conv` | string | 是 | 会话 ID（group:群号 / private:QQ） |
+
+### `qq_ask_admin` — 请示管理员
+
+等级：**发送**　来源插件：`ask-admin`
+
+拿不准的事请示管理员：群友要你记住关于他的事（称呼、关系、身份、偏好等）、或要你做你不确定该不该做的事时使用。会私聊管理员，管理员答复后会唤醒你并在【系统通知】里告诉你结果。调用后跟对方说一声"我去问问"即可。日常闲聊、明显该拒绝的事不要请示。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `conv` | string | 是 | 请求发生的会话 |
+| `requester` | string,number | 是 | 提出请求的人的 QQ |
+| `kind` | `memory` \| `other` | 是 | memory：想让你记住某事 / other：想让你做某事 |
+| `content` | string | 是 | 对方的请求，一句话概括（memory 时写成要记住的那句话） |
+| `reason` | string |  | 你为什么拿不准 默认 `""` |
+| `subject` | string,number |  | memory：这条记忆关于谁（QQ），默认是提出请求的人 |
+| `importance` | integer |  |  默认 `3` |
+
+### `qq_schedule` — 定时发送
+
+等级：**发送**　来源插件：`scheduler`
+
+安排一条定时消息（提醒、早安问候等）。三选一指定时间：at（ISO 时间或"10分钟后/明天8点"）、delayMinutes、cron（周期，如 "0 8 * * *" 每天 8 点）。消息支持内联标记。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `conv` | string | 是 |  |
+| `message` | string | 是 |  |
+| `at` | string |  |  |
+| `delayMinutes` | number |  |  |
+| `cron` | string |  |  |
+| `mentionUser` | string,number |  | 发送时 @ 的人 |
+
+### `qq_schedule_list` — 定时任务列表
+
+等级：**读取**（只读）　来源插件：`scheduler`
+
+列出待执行的定时消息。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `conv` | string |  |  |
+
+### `qq_schedule_cancel` — 取消定时任务
+
+等级：**发送**　来源插件：`scheduler`
+
+取消一个定时消息。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `id` | integer | 是 |  |
 
 ### `qq_group_stats` — 群聊统计
 

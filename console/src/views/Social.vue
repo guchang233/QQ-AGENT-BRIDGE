@@ -13,10 +13,17 @@ const roles = ref<any[]>([]);
 const err = ref('');
 const editing = ref<{ name: string; content: string; isNew?: boolean } | null>(null);
 const preview = ref('');
+const asks = ref<any[]>([]);
+async function loadAsks() { try { asks.value = await api('/api/p/ask-admin/requests'); } catch { asks.value = []; } }
+async function decideAsk(id: number, approve: boolean) {
+  const note = approve ? '' : (window.prompt('拒绝理由（可空，会转告 AI）') ?? '');
+  try { const r = await api(`/api/p/ask-admin/requests/${id}`, { body: { approve, note } }); msg.success(r.message); loadAsks(); } catch (e: any) { msg.error(e.message); }
+}
 
 async function load() {
   try {
     [convs.value, roles.value] = await Promise.all([api('/api/p/social/convs'), api('/api/p/social/roles')]);
+    loadAsks();
     err.value = '';
   } catch (e: any) { err.value = e.status === 404 ? '「仿真与人格」插件未启用：请在「插件」页开启 social' : e.message; }
 }
@@ -66,6 +73,15 @@ onUnmounted(() => { off(); clearTimeout(t); });
       <a style="cursor: pointer; color: #12b7f5" @click="router.push('/plugins')">插件 → 仿真与人格 → 配置</a> 中调整。
       QQ 里管理员也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
     </n-alert>
+
+    <n-card v-if="asks.length" title="待处理的请示" size="small" style="border-color: #f0a020">
+      <div v-for="a in asks" :key="a.id" style="padding: 6px 0; border-bottom: 1px dashed rgba(128,128,128,.25)">
+        <b>#{{ a.id }}</b> {{ a.conv }} · {{ a.requester_name || a.requester }}({{ a.requester }})：{{ a.content }}
+        <div v-if="a.reason" style="font-size: 12px; opacity: .65">AI 拿不准的原因：{{ a.reason }}</div>
+        <n-space style="margin-top: 4px"><n-button size="tiny" type="primary" @click="decideAsk(a.id, true)">同意</n-button><n-button size="tiny" @click="decideAsk(a.id, false)">拒绝</n-button></n-space>
+      </div>
+      <n-text depth="3" style="font-size: 12px">也可以直接在 QQ 私聊里回复机器人「同意 编号」或「拒绝 编号 理由」。</n-text>
+    </n-card>
 
     <n-card title="会话" size="small">
       <n-data-table :columns="cols" :data="convs" size="small" :row-key="(r: any) => r.conv" />

@@ -274,6 +274,24 @@ describe('系统插件', () => {
     bridge.config.owners = [];
   });
 
+  it('请示管理员：私聊通知管理员，管理员回复「同意」后写入记忆', async () => {
+    bridge.config.owners = ['20001'];
+    mock.calls.length = 0;
+    mock.handlers.set_input_status = () => null;
+    const r = await client.callTool({ name: 'qq_ask_admin', arguments: { conv: 'group:111', requester: '30003', kind: 'memory', content: '小李希望大家叫他李哥', reason: '不确定要不要改称呼' } });
+    expect(text(r)).toMatch(/请示.*#(\d+)/);
+    const id = /#(\d+)/.exec(text(r))![1];
+    const notice = mock.calls.find((c) => c.action === 'send_private_msg' && JSON.stringify(c.params.message).includes(`请示 #${id}`));
+    expect(notice?.params.user_id).toBe(20001);
+    mock.calls.length = 0;
+    mock.pushPrivateMessage(20001, [{ type: 'text', data: { text: `同意 ${id}` } }]);
+    await waitFor(() => mock.calls.some((c) => c.action === 'send_private_msg' && JSON.stringify(c.params.message).includes(`已同意请示 #${id}`)));
+    const row = bridge.store.db.prepare("SELECT kind, source FROM mem_items WHERE content LIKE '%李哥%'").get() as any;
+    expect(row).toBeTruthy();
+    expect(row.source).toContain('admin-approved');
+    bridge.config.owners = [];
+  });
+
   it('定时：安排并触发', async () => {
     mock.calls.length = 0;
     const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });

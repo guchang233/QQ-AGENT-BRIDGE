@@ -27,7 +27,7 @@ export const DSH_TOOLS = [
   'qq_list_stickers', 'qq_send_sticker', 'qq_collect_sticker', 'qq_sticker_note',
   'qq_speak', 'qq_transcribe',
   'qq_memory_remember', 'qq_memory_recall', 'qq_memory_context', 'qq_memory_update',
-  'qq_set_wake', 'qq_social_state', 'qq_get_persona',
+  'qq_set_wake', 'qq_social_state', 'qq_get_persona', 'qq_ask_admin',
   'qq_web_search', 'qq_web_fetch',
   'qq_schedule', 'qq_schedule_list', 'qq_schedule_cancel',
   'qq_qzone_feeds', 'qq_qzone_list',
@@ -151,6 +151,11 @@ export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; res
     steps.push('已将 token「dsh」设为会话绑定');
   }
   if (!tok.toolAllow?.length) { tok.toolAllow = [...DSH_TOOLS]; steps.push(`DSH 只提供 ${DSH_TOOLS.length} 个聊天相关工具（可在 config 的 agents.tokens 中调整）`); }
+  else {
+    // 新版本新增的聊天工具补进白名单（不移除用户自己调整过的）
+    const added = DSH_TOOLS.filter((t) => !tok!.toolAllow.includes(t));
+    if (added.length) { tok.toolAllow = [...tok.toolAllow, ...added]; steps.push(`DSH 新增工具：${added.join('、')}`); }
+  }
   cfg.drivers.dsh.enabled = true;
   cfg.drivers.dsh.preset = PRESET_ID;
   bridge.updateConfig(cfg);

@@ -47,6 +47,13 @@ export class Bridge extends EventEmitter {
   usage: UsageLedger;
   /** 已注册的 Agent 驱动（DSH 等） */
   drivers = new Map<string, AgentDriver>();
+  /** 已被插件命令处理的消息（conv|msgId）：仿真不再为它唤醒 AI */
+  consumed = new Set<string>();
+  consume(conv: string, msgId: string) {
+    this.consumed.add(`${conv}|${msgId}`);
+    if (this.consumed.size > 2000) this.consumed.delete(this.consumed.values().next().value!);
+  }
+  isConsumed(conv: string, msgId: string) { return this.consumed.has(`${conv}|${msgId}`); }
   /** 插件宿主（由 PluginHost 构造时挂载） */
   pluginHost?: import('./plugins/host.ts').PluginHost;
 

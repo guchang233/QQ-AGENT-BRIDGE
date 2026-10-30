@@ -22,39 +22,6 @@
 |---|---|---|---|
 | `helpHeader` | string | `"可用命令（前缀 / 或 #；群里 @我 时可省略）："` | 帮助菜单标题 |
 
-## 刷屏防护（`guard`） · 默认关闭
-
-检测刷屏与重复消息，自动警告、撤回或禁言
-
-
-
-**配置**
-
-| 键 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `windowSec` | int | `10` | 统计窗口（秒） |
-| `maxMessages` | int | `8` | 窗口内最多消息数 |
-| `maxRepeats` | int | `4` | 连续重复相同内容的上限 |
-| `action` | select（warn/recall/ban） | `"warn"` | 触发后：warn 警告 / recall 撤回 / ban 禁言 |
-| `banMinutes` | int | `10` | 禁言时长（分钟） |
-| `groups` | list | `[]` | 生效的群（留空 = 所有允许的群） |
-| `whitelist` | list | `[]` | 豁免的 QQ |
-
-## 关键词回复（`keyword-reply`） · 默认关闭
-
-消息包含关键词时自动回复
-
-
-
-**配置**
-
-| 键 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `rules` | list | `["早安=>早上好呀[face:太阳]","晚安=>晚安，好梦[face:月亮]"]` | 规则：关键词=>回复（回复支持内联标记；关键词以 re: 开头表示正则） |
-| `exact` | bool | `false` | 整句完全匹配（否则包含即触发） |
-| `cooldownSec` | int | `30` | 同一会话同一规则的冷却秒数 |
-| `groupsOnly` | bool | `false` | 仅群聊生效 |
-
 ## 记忆（`memory`）
 
 长期记忆：遗忘曲线、强化、合并去重、全文/语义索引
@@ -88,6 +55,103 @@
 | `membersCanRemember` | bool | `false` | 允许普通群友用 /记住 写入记忆（否则仅管理员） |
 | `agentPerHour` | int | `20` | Agent 每个范围每小时最多写入几条记忆 |
 | `memberMaxChars` | int | `200` | 非管理员要求记住的内容最长字数 |
+
+## 仿真与人格（`social`）
+
+由 Agent 驱动（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言、按会话绑定人格卡
+
+**命令**
+
+- `/仿真 [开|关|唤醒|重置|状态]` — 仿真开关与状态
+- `/人格 [列表|<人格名>|默认]`（别名：/角色） — 查看/切换本会话人格
+
+**Agent 工具**：`qq_set_wake`、`qq_social_state`、`qq_get_persona`
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `driver` | select（dsh） | `"dsh"` | Agent 驱动 |
+| `convs` | list | `[]` | 启用仿真的会话（group:群号 / private:QQ），留空 = 不启用 |
+| `defaultRole` | string | `""` | 默认人格卡名（roles/ 目录下的文件名，不含 .md；留空 = 默认群友） |
+| `roleBindings` | list | `[]` | 按会话绑定人格：会话=>人格名，如 group:123=>小鲸鱼 |
+| `roleMaxChars` | int | `8000` | 人格卡注入上限（字） |
+| `botNames` | list | `[]` | 你的别名（被叫到算"叫名字"，昵称与群名片自动包含） |
+| `defaultMode` | select（diving/active） | `"diving"` | 默认模式：diving 潜水（被叫才醒）/ active 活跃 |
+| `atMention` | bool | `true` | @我 / 回复我 时唤醒 |
+| `nameMention` | bool | `true` | 提到名字时唤醒 |
+| `question` | bool | `true` | 有人问问题时唤醒 |
+| `poke` | bool | `true` | 被戳时唤醒 |
+| `keywords` | list | `[]` | 关键词（命中即唤醒） |
+| `probability` | float | `0.05` | 潜水时普通消息的随机唤醒概率 |
+| `batchWindowSec` | int | `8` | 群聊批量窗口（秒）：收到触发后等一会儿再唤醒，把连续消息合并 |
+| `directWindowSec` | float | `2` | 私聊 / @我 / 戳我 时的等待秒数（对方在等你回复，越短越快） |
+| `typingIndicator` | bool | `true` | 私聊中 AI 思考与分条发送期间显示「对方正在输入…」 |
+| `maxWakePerMinute` | int | `2` | 每会话每分钟最多唤醒次数 |
+| `maxWakePerHour` | int | `20` | 每会话每小时最多唤醒次数 |
+| `noActionLimit` | int | `3` | 连续多少轮什么都没做就恢复默认配置 |
+| `replyCheckSec` | int | `45` | 发言后多久回来看看有没有人接（秒，0 = 不检查） |
+| `sleepMinMinutes` | int | `5` | 沉睡下限（分钟） |
+| `sleepMaxMinutes` | int | `180` | 沉睡上限（分钟） |
+| `proactive` | bool | `true` | 群里安静时偶尔主动开话题 |
+| `proactiveIdleMinutes` | int | `15` | 安静多久算"冷场"（分钟） |
+| `proactiveCheckMinutes` | int | `45` | 平均多久检查一次（分钟） |
+| `proactiveProbability` | float | `0.3` | 检查时主动开口的概率（深夜/刚说过话会自动降低） |
+| `wakeMessageLimit` | int | `15` | 唤醒时附带的新消息条数上限 |
+| `wakeMaxChars` | int | `6000` | 唤醒消息快照字数上限 |
+| `withMemory` | bool | `true` | 唤醒时附带相关记忆（需记忆插件） |
+| `forwardText` | bool | `false` | 兜底：Agent 本轮没调用发送工具时，把它的文字回复发出去（一般不建议） |
+
+## 请示管理员（`ask-admin`）
+
+AI 拿不准时私聊请示管理员；管理员在 QQ 里回复「同意/拒绝」，结果自动写入记忆并通知 AI
+
+**命令**
+
+- `/请示` — 查看待处理的请示
+
+**Agent 工具**：`qq_ask_admin`
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `maxPendingPerUser` | int | `2` | 同一个人同时最多几条待处理请示 |
+| `maxPerConvHour` | int | `5` | 每个会话每小时最多请示几次 |
+| `expireHours` | int | `24` | 多少小时没答复就过期 |
+
+## 刷屏防护（`guard`） · 默认关闭
+
+检测刷屏与重复消息，自动警告、撤回或禁言
+
+
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `windowSec` | int | `10` | 统计窗口（秒） |
+| `maxMessages` | int | `8` | 窗口内最多消息数 |
+| `maxRepeats` | int | `4` | 连续重复相同内容的上限 |
+| `action` | select（warn/recall/ban） | `"warn"` | 触发后：warn 警告 / recall 撤回 / ban 禁言 |
+| `banMinutes` | int | `10` | 禁言时长（分钟） |
+| `groups` | list | `[]` | 生效的群（留空 = 所有允许的群） |
+| `whitelist` | list | `[]` | 豁免的 QQ |
+
+## 关键词回复（`keyword-reply`） · 默认关闭
+
+消息包含关键词时自动回复
+
+
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `rules` | list | `["早安=>早上好呀[face:太阳]","晚安=>晚安，好梦[face:月亮]"]` | 规则：关键词=>回复（回复支持内联标记；关键词以 re: 开头表示正则） |
+| `exact` | bool | `false` | 整句完全匹配（否则包含即触发） |
+| `cooldownSec` | int | `30` | 同一会话同一规则的冷却秒数 |
+| `groupsOnly` | bool | `false` | 仅群聊生效 |
 
 ## 消息互通（`relay`） · 默认关闭
 
@@ -151,50 +215,6 @@
 |---|---|---|---|
 | `membersCanUse` | bool | `true` | 允许普通成员使用 /提醒 |
 | `maxJobsPerUser` | int | `10` | 每人最多同时存在的提醒数 |
-
-## 仿真与人格（`social`）
-
-由 Agent 驱动（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言、按会话绑定人格卡
-
-**命令**
-
-- `/仿真 [开|关|唤醒|重置|状态]` — 仿真开关与状态
-- `/人格 [列表|<人格名>|默认]`（别名：/角色） — 查看/切换本会话人格
-
-**Agent 工具**：`qq_set_wake`、`qq_social_state`、`qq_get_persona`
-
-**配置**
-
-| 键 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `driver` | select（dsh） | `"dsh"` | Agent 驱动 |
-| `convs` | list | `[]` | 启用仿真的会话（group:群号 / private:QQ），留空 = 不启用 |
-| `defaultRole` | string | `""` | 默认人格卡名（roles/ 目录下的文件名，不含 .md；留空 = 默认群友） |
-| `roleBindings` | list | `[]` | 按会话绑定人格：会话=>人格名，如 group:123=>小鲸鱼 |
-| `roleMaxChars` | int | `8000` | 人格卡注入上限（字） |
-| `botNames` | list | `[]` | 你的别名（被叫到算"叫名字"，昵称与群名片自动包含） |
-| `defaultMode` | select（diving/active） | `"diving"` | 默认模式：diving 潜水（被叫才醒）/ active 活跃 |
-| `atMention` | bool | `true` | @我 / 回复我 时唤醒 |
-| `nameMention` | bool | `true` | 提到名字时唤醒 |
-| `question` | bool | `true` | 有人问问题时唤醒 |
-| `poke` | bool | `true` | 被戳时唤醒 |
-| `keywords` | list | `[]` | 关键词（命中即唤醒） |
-| `probability` | float | `0.05` | 潜水时普通消息的随机唤醒概率 |
-| `batchWindowSec` | int | `8` | 批量窗口（秒）：收到触发后等一会儿再唤醒，把连续消息合并 |
-| `maxWakePerMinute` | int | `2` | 每会话每分钟最多唤醒次数 |
-| `maxWakePerHour` | int | `20` | 每会话每小时最多唤醒次数 |
-| `noActionLimit` | int | `3` | 连续多少轮什么都没做就恢复默认配置 |
-| `replyCheckSec` | int | `45` | 发言后多久回来看看有没有人接（秒，0 = 不检查） |
-| `sleepMinMinutes` | int | `5` | 沉睡下限（分钟） |
-| `sleepMaxMinutes` | int | `180` | 沉睡上限（分钟） |
-| `proactive` | bool | `true` | 群里安静时偶尔主动开话题 |
-| `proactiveIdleMinutes` | int | `15` | 安静多久算"冷场"（分钟） |
-| `proactiveCheckMinutes` | int | `45` | 平均多久检查一次（分钟） |
-| `proactiveProbability` | float | `0.3` | 检查时主动开口的概率（深夜/刚说过话会自动降低） |
-| `wakeMessageLimit` | int | `15` | 唤醒时附带的新消息条数上限 |
-| `wakeMaxChars` | int | `6000` | 唤醒消息快照字数上限 |
-| `withMemory` | bool | `true` | 唤醒时附带相关记忆（需记忆插件） |
-| `forwardText` | bool | `false` | 兜底：Agent 本轮没调用发送工具时，把它的文字回复发出去（一般不建议） |
 
 ## 群聊统计（`stats`）
 
