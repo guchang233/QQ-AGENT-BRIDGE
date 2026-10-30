@@ -5,7 +5,7 @@ import { parseCQ, parseConv } from '../src/message/segments.ts';
 import { renderSegments } from '../src/message/render.ts';
 import { matchCommand } from '../src/plugins/host.ts';
 import { oneLine, splitLines } from '../src/bridge.ts';
-import { newState, schedule as scheduleWake } from '../src/system-plugins/social/engine.ts';
+import { newState, schedule as scheduleWake, tick as tickWake } from '../src/system-plugins/social/engine.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
 import { parseWhen } from '../src/system-plugins/scheduler/index.ts';
 import { inHours } from '../src/system-plugins/bubble/index.ts';
@@ -85,6 +85,19 @@ describe('杂项', () => {
     scheduleWake(b, 'atMention', c, t + 1000);                                   // 窗口内被 @：提前
     expect(b.pending!.dueAt).toBe(t + 3000);
     expect(b.pending!.reason).toBe('atMention');
+  });
+  it('唤醒限流：普通触发被延后，手动唤醒不受限', () => {
+    const c: any = { defaultMode: 'diving', triggers: { atMention: true, nameMention: true, question: true, poke: true, keywords: [], speakerIds: [], probability: 0 },
+      batchWindowMs: 0, directWindowMs: 0, maxWakePerMinute: 9, maxWakePerHour: 2, noActionLimit: 3, replyCheckMs: 0, proactive: { enabled: false } };
+    const t = 1_000_000;
+    const s = newState('group:1', c, t);
+    s.wakeTimes = [t - 1000, t - 500];
+    scheduleWake(s, 'atMention', c, t);
+    expect(tickWake(s, c, { busy: false, recentSelfSends: 0 }, t)).toBeNull();
+    expect(s.limited).toBe(true);
+    scheduleWake(s, 'manual', c, t);
+    expect(tickWake(s, c, { busy: false, recentSelfSends: 0 }, t + 20_000)).toBe('manual');
+    expect(s.limited).toBe(false);
   });
   it('冒泡：免打扰时段（含跨午夜）', () => {
     expect(inHours('0-8', 3)).toBe(true);

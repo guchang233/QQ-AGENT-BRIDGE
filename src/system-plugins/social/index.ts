@@ -5,7 +5,7 @@ import type { StoredMessage } from '../../store/db.ts';
 import type { TurnResult } from '../../drivers/types.ts';
 import { RoleStore, DEFAULT_ROLE, sanitizeRoleName } from './roles.ts';
 import {
-  type ConvState, type EngineConfig, type Mode, newState, evaluate, schedule, tick, onTurnEnd, fmtAgo, looksUnfinished, REASON_LABEL,
+  type ConvState, type EngineConfig, type Mode, newState, evaluate, schedule, tick, limitResumeAt, onTurnEnd, fmtAgo, looksUnfinished, REASON_LABEL,
 } from './engine.ts';
 
 /**
@@ -148,7 +148,15 @@ export default definePlugin({
       const ec = engineCfg();
       for (const conv of enabled.list()) {
         const s = stateOf(conv);
+        const wasLimited = !!s.limited;
         const reason = tick(s, ec, { busy: d.isBusy(conv) || firing.has(conv), recentSelfSends: Number(recentSelfSends(conv).n) });
+        if (s.limited && !wasLimited) {
+          const r = limitResumeAt(s, ec);
+          const at = new Date(r.at).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+          const why = r.hourFull ? `近一小时已唤醒 ${ec.maxWakePerHour} 次（上限）` : `一分钟内已唤醒 ${ec.maxWakePerMinute} 次（上限）`;
+          ctx.logger.info(`${conv} 唤醒被限流：${why}，${at} 恢复`);
+          bridge.activity({ kind: 'error', level: 'warn', conv, actor: '仿真', title: `唤醒限流：${why}`, detail: `${at} 后恢复（期间的触发会合并成一次）。可在仿真设置里调高「每会话每小时最多唤醒次数」；「唤醒一次」按钮不受限制。` });
+        }
         if (!reason) continue;
         save(conv);
         firing.add(conv);
@@ -388,7 +396,8 @@ export default definePlugin({
       return [...all].map((conv) => {
         const s = stateOf(conv);
         return { conv, name: bridge.convName(conv), enabled: enabled.has(conv), mode: s.mode, sleepUntil: s.sleepUntil, triggers: s.triggers, role: roleOf(conv),
-          wakes: s.wakes, lastReason: s.lastReason, lastWakeAt: s.lastWakeAt, pending: s.pending, busy: d?.isBusy(conv) ?? false, confirmedBy: s.confirmedBy };
+          wakes: s.wakes, lastReason: s.lastReason, lastWakeAt: s.lastWakeAt, pending: s.pending, busy: d?.isBusy(conv) ?? false, confirmedBy: s.confirmedBy,
+          wakesHour: s.wakeTimes.filter((t) => Date.now() - t < 3_600_000).length, limitedUntil: s.limited ? limitResumeAt(s, engineCfg()).at : null };
       });
     });
     ctx.route('POST', 'convs/:conv/:op', async ({ params, body }) => {

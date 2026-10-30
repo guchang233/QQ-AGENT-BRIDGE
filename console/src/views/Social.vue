@@ -54,7 +54,8 @@ const cols: DataTableColumns<any> = [
     r.pending ? h(NTag, { size: 'small', bordered: false }, { default: () => `待唤醒:${r.pending.reason}` }) : null,
   ] }) },
   { title: '人格', key: 'role', width: 160, render: (r) => h(NSelect, { size: 'small', value: r.role, options: roles.value.map((x) => ({ label: x.name, value: x.name })), onUpdateValue: (v: string) => op(r.conv, 'role', { role: v }) }) },
-  { title: '唤醒', key: 'wakes', width: 140, render: (r) => h('div', { style: 'font-size:12px' }, [`${r.wakes} 次`, r.lastWakeAt ? ` · ${fmtTime(r.lastWakeAt)}` : '', r.lastReason ? h('div', { style: 'opacity:.6' }, r.lastReason) : null]) },
+  { title: '唤醒', key: 'wakes', width: 140, render: (r) => h('div', { style: 'font-size:12px' }, [`${r.wakes} 次（近1小时 ${r.wakesHour ?? 0}）`, r.lastWakeAt ? ` · ${fmtTime(r.lastWakeAt)}` : '', r.lastReason ? h('div', { style: 'opacity:.6' }, r.lastReason) : null,
+    r.limitedUntil ? h('div', { style: 'color:#d03050' }, `限流中，${fmtTime(r.limitedUntil)} 恢复`) : null]) },
   { title: '', key: 'ops', width: 300, render: (r) => h(NSpace, { size: 4 }, { default: () => [
     h(NButton, { size: 'tiny', disabled: !r.enabled, onClick: () => op(r.conv, 'wake') }, { default: () => '唤醒一次' }),
     h(NSelect, { size: 'tiny', style: 'width:84px', placeholder: '切换', value: null, options: [{ label: '活跃', value: 'active' }, { label: '潜水', value: 'diving' }, { label: '沉睡30分', value: 'sleeping' }], onUpdateValue: (v: string) => op(r.conv, 'mode', { mode: v, minutes: 30 }) }),

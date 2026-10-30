@@ -48,6 +48,8 @@ export interface ConvState {
   roleVersion: string;
   wakes: number;
   lastReason: string;
+  /** 当前待唤醒是否正被限流延后 */
+  limited?: boolean;
 }
 
 export interface EngineConfig {
@@ -120,6 +122,16 @@ export function schedule(s: ConvState, reason: string, c: EngineConfig, now = Da
   s.pending.dueAt = Math.min(s.pending.dueAt, now + windowOf(reason, c));
 }
 
+const BYPASS_LIMIT = new Set(['manual', 'adminReply']);
+
+/** 被限流时，什么时候能恢复唤醒 */
+export function limitResumeAt(s: ConvState, c: EngineConfig, now = Date.now()) {
+  const inMin = s.wakeTimes.filter((t) => now - t < 60_000);
+  const minuteFull = inMin.length >= c.maxWakePerMinute;
+  const hourFull = s.wakeTimes.length >= c.maxWakePerHour;
+  return { hourFull, at: Math.max(minuteFull ? Math.min(...inMin) + 60_000 : now, hourFull ? s.wakeTimes[s.wakeTimes.length - c.maxWakePerHour] + 3_600_000 : now) };
+}
+
 export function rateOk(s: ConvState, c: EngineConfig, now = Date.now()) {
   s.wakeTimes = s.wakeTimes.filter((t) => now - t < 3_600_000);
   const lastMin = s.wakeTimes.filter((t) => now - t < 60_000).length;
@@ -152,7 +164,9 @@ export function tick(s: ConvState, c: EngineConfig, ctx: { busy: boolean; recent
     if (s.mode !== 'sleeping' && s.lastIncomingAt > 0 && idle >= c.proactive.idleMs && Math.random() < proactiveProbability(s, c, ctx.recentSelfSends, now)) schedule(s, 'proactive', c, now);
   }
   if (!s.pending || s.pending.dueAt > now || ctx.busy) return null;
-  if (!rateOk(s, c, now)) { s.pending.dueAt = now + 15_000; return null; } // 限流：延后而不是丢弃（qq-bridge 丢弃导致过永久沉睡）
+  // 限流：延后而不是丢弃（qq-bridge 丢弃导致过永久沉睡）；管理员手动唤醒不受限
+  if (!BYPASS_LIMIT.has(s.pending.reason) && !rateOk(s, c, now)) { s.pending.dueAt = now + 15_000; s.limited = true; return null; }
+  s.limited = false;
   const reason = s.pending.reason;
   s.pending = null;
   s.wakeTimes.push(now);
