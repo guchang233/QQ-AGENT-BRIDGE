@@ -29,7 +29,7 @@ export interface ToolDef {
 }
 
 const conv = z.string().describe('会话 ID：group:<群号> 或 private:<QQ号>');
-const msgId = z.union([z.string(), z.number()]).transform(String).describe('消息 ID（消息行开头 # 后的数字）');
+const msgId = z.union([z.string(), z.number()]).transform(String).describe('消息的 id 字段');
 const qq = z.union([z.string(), z.number()]).transform(String);
 const groupId = qq.describe('群号');
 

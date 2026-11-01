@@ -27,7 +27,8 @@
     "check": "tsc --noEmit && vitest run",
     "release:pack": "node scripts/pack-release.mjs",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run check"
+    "prepublishOnly": "npm run check",
+    "eval:memory": "tsx test/memory-eval.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.6",
