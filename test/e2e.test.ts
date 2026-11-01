@@ -46,7 +46,7 @@ beforeAll(async () => {
   bridge = new Bridge(config);
   const host = new PluginHost(bridge);
   app = await startWeb(bridge, host);
-  await bridge.start();
+  await bridge.connect();
   await host.loadAll();
   await waitFor(() => !!bridge.self);
   client = new Client({ name: 't', version: '1' });

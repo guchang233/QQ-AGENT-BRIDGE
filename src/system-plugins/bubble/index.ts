@@ -105,6 +105,7 @@ export default definePlugin({
     }
 
     ctx.setInterval(async () => {
+      if (!bridge.running) return;
       const now = Date.now();
       for (const conv of targets()) {
         const s = stateOf(conv);

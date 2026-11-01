@@ -139,6 +139,12 @@ export const ConfigSchema = z.object({
     /** 覆盖默认价目：{ models: { 'model-id': { cacheHit, cacheMiss, output } }, peakMultiplier, ... } */
     prices: z.record(z.string(), z.any()).default({}),
   }).prefault({}),
+  bot: z.object({
+    /** 守护进程启动时自动连接 QQ（默认否：只在控制台点「启动机器人」时连接） */
+    autoConnect: z.boolean().default(false),
+    /** 连接断开后自动重连（默认否：断开即停止） */
+    autoReconnect: z.boolean().default(false),
+  }).prefault({}),
   update: z.object({
     /** 定时检查 GitHub Release 新版本 */
     check: z.boolean().default(true),

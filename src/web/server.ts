@@ -109,6 +109,8 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     const day = Date.now() - 86400_000;
     return { ...bridge.status(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp`, root: ROOT.split(path.sep).join('/') };
   });
+  app.post('/api/bot/start', async () => { await bridge.connect(); return bridge.status(); });
+  app.post('/api/bot/stop', async () => { bridge.disconnect(); return bridge.status(); });
   app.post('/api/reconnect', async () => { await bridge.rediscover(); return { ok: true, status: bridge.status() }; });
   app.post('/api/contacts/refresh', async () => { await bridge.refreshContacts(); return { groups: bridge.groups.size, friends: bridge.friends.size }; });
 

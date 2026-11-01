@@ -35,7 +35,7 @@ beforeAll(async () => {
     plugins: { dir: path.join(tmp, 'noplugins'), astrbot: { enabled: true, dir: path.join(ROOT, 'astrbot_shim', 'examples') } },
   }));
   const host = new PluginHost(bridge);
-  await bridge.start();
+  await bridge.connect();
   while (!bridge.self) await sleep(20);
   astr = new AstrBotHost(bridge, host);
   await astr.start();

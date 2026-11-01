@@ -61,6 +61,7 @@ export default definePlugin({
 
     // 单次任务：每 10 秒检查一次（守护进程停机期间错过的，在 1 小时内补发）
     ctx.setInterval(() => {
+      if (!ctx.bridge.running) return;
       const now = Date.now();
       for (const j of db.prepare("SELECT * FROM sched_jobs WHERE enabled = 1 AND kind = 'once' AND at <= ?").all(now) as unknown as Job[]) {
         if (now - j.at > 3_600_000) { db.prepare('UPDATE sched_jobs SET enabled = 0 WHERE id = ?').run(j.id); continue; }

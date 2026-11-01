@@ -78,6 +78,13 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
         </n-form>
       </n-card>
 
+      <n-card title="机器人启动" size="small">
+        <n-form label-placement="left" label-width="140">
+          <n-form-item label="启动时自动连接"><n-switch v-model:value="cfg.bot.autoConnect" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">关闭时只有在仪表盘点「启动机器人」才连接 QQ</n-text></n-form-item>
+          <n-form-item label="断开后自动重连"><n-switch v-model:value="cfg.bot.autoReconnect" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">关闭时 SnowLuma 断开后机器人就停止</n-text></n-form-item>
+        </n-form>
+      </n-card>
+
       <n-card title="QQ 协议端（OneBot v11）" size="small">
         <n-form label-placement="left" label-width="140">
           <n-form-item label="自动发现"><n-switch v-model:value="cfg.onebot.autoDiscover" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">从 SnowLuma 配置自动读取端口与 token，切换账号无需改配置</n-text></n-form-item>

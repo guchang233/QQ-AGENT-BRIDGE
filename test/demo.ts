@@ -28,7 +28,7 @@ const config = ConfigSchema.parse({
 const bridge = new Bridge(config);
 const plugins = new PluginHost(bridge);
 await startWeb(bridge, plugins);
-await bridge.start();
+await bridge.connect();
 await plugins.loadAll();
 
 const lines = ['今天吃什么', '有人打游戏吗', '哈哈哈哈', '这个 bug 修好了没', '早安', '晚上开黑'];

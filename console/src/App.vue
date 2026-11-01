@@ -44,6 +44,7 @@ const menu = computed<MenuOption[]>(() => [
 const active = computed(() => '/' + (route.path.split('/')[1] ?? ''));
 const connTag = computed(() => {
   const c = state.status?.connection;
+  if (state.status && !state.status.running) return { type: 'default' as const, text: '未启动' };
   return c === 'open' ? { type: 'success' as const, text: '已连接' } : c === 'connecting' ? { type: 'warning' as const, text: '连接中' } : { type: 'error' as const, text: '未连接' };
 });
 

@@ -34,10 +34,13 @@ export class OneBotClient extends EventEmitter {
   private pending = new Map<string, Pending>();
   private seq = 0;
   private retry = 0;
-  private stopped = false;
+  /** 初始为停止：只有显式 start() 才连接 */
+  private stopped = true;
+  /** 更换端点时的那次断开要连回去，不算掉线 */
+  private switching = false;
   private reconnectTimer?: NodeJS.Timeout;
 
-  constructor(public ep: OneBotEndpoints, private opts: { timeoutMs: number; reconnectMaxMs: number }) {
+  constructor(public ep: OneBotEndpoints, private opts: { timeoutMs: number; reconnectMaxMs: number; autoReconnect?: () => boolean }) {
     super();
     this.setMaxListeners(50);
   }
@@ -45,13 +48,15 @@ export class OneBotClient extends EventEmitter {
   setEndpoints(ep: OneBotEndpoints) {
     const changed = ep.wsUrl !== this.ep.wsUrl || ep.wsToken !== this.ep.wsToken;
     this.ep = ep;
-    if (changed && !this.stopped) { this.ws?.terminate(); }
+    if (changed && !this.stopped && this.ws) { this.switching = true; this.ws.terminate(); }
   }
 
   start() {
     this.stopped = false;
     this.connect();
   }
+
+  get running() { return !this.stopped; }
 
   stop() {
     this.stopped = true;
@@ -97,6 +102,15 @@ export class OneBotClient extends EventEmitter {
         p.reject(Object.assign(new Error('WS 连接断开'), { retryHttp: true }));
       }
       if (this.stopped) return;
+      const switching = this.switching;
+      this.switching = false;
+      if (!switching && !this.opts.autoReconnect?.()) {
+        // 默认不重连：断开后就停下，等人在面板重新启动
+        this.stopped = true;
+        log.warn(`连接断开${this.lastError ? `（${this.lastError}）` : ''}，已停止（未开启自动重连）`);
+        this.emit('state', this.state);
+        return;
+      }
       const delay = Math.min(this.opts.reconnectMaxMs, 1000 * 2 ** Math.min(this.retry++, 5));
       log.warn(`连接断开${this.lastError ? `（${this.lastError}）` : ''}，${Math.round(delay / 1000)}s 后重连`);
       this.reconnectTimer = setTimeout(() => this.connect(), delay);
@@ -123,6 +137,7 @@ export class OneBotClient extends EventEmitter {
 
   /** 调用 OneBot 动作。WS 在线优先走 WS，否则 HTTP。 */
   async call<T = any>(action: string, params: Record<string, unknown> = {}, timeoutMs = this.opts.timeoutMs): Promise<T> {
+    if (this.stopped) throw new Error('机器人未启动，请先在控制台启动');
     if (this.ws && this.state === 'open') {
       try {
         return await this.callWs<T>(action, params, timeoutMs);

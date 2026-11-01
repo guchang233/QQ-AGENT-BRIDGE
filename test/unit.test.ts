@@ -4,6 +4,7 @@ import { parseDsl } from '../src/message/dsl.ts';
 import { parseCQ, parseConv } from '../src/message/segments.ts';
 import { renderSegments } from '../src/message/render.ts';
 import { matchCommand } from '../src/plugins/host.ts';
+import { OneBotClient } from '../src/onebot/client.ts';
 import { oneLine, splitLines } from '../src/bridge.ts';
 import { newState, schedule as scheduleWake, tick as tickWake } from '../src/system-plugins/social/engine.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
@@ -107,6 +108,11 @@ describe('杂项', () => {
     expect(inHours('23-7', 12)).toBe(false);
     expect(inHours('12-13, 0-6', 12)).toBe(true);
     expect(inHours('', 3)).toBe(false);
+  });
+  it('OneBot 客户端默认不连接，未启动时拒绝调用', async () => {
+    const c = new OneBotClient({ wsUrl: 'ws://127.0.0.1:1', wsToken: '', httpUrl: 'http://127.0.0.1:1', httpToken: '' }, { timeoutMs: 100, reconnectMaxMs: 100 });
+    expect(c.running).toBe(false);
+    await expect(c.call('get_login_info')).rejects.toThrow('未启动');
   });
   it('动作分级', () => {
     expect(actionTier('get_group_list')).toBe('read');

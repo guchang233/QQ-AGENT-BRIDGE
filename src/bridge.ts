@@ -68,7 +68,7 @@ export class Bridge extends EventEmitter {
     const ob = this.config.onebot;
     this.bot = new OneBotClient(
       { wsUrl: ob.wsUrl, wsToken: ob.accessToken, httpUrl: ob.httpUrl, httpToken: ob.httpToken || ob.accessToken },
-      { timeoutMs: ob.actionTimeoutMs, reconnectMaxMs: ob.reconnectMaxMs },
+      { timeoutMs: ob.actionTimeoutMs, reconnectMaxMs: ob.reconnectMaxMs, autoReconnect: () => this.config.bot.autoReconnect },
     );
     this.media = new MediaService(this.store, this.bot, {
       dir: path.join(this.dataDir, 'media'),
@@ -87,10 +87,25 @@ export class Bridge extends EventEmitter {
   // ======================================================================
   // 生命周期
   // ======================================================================
+  /** 守护进程启动时调用：默认不连接，等人在控制台点启动（除非开启了自动连接） */
   async start() {
+    if (this.config.bot.autoConnect) await this.connect();
+    else log.info('机器人未启动：请在控制台点「启动机器人」');
+  }
+
+  /** 连接 QQ 协议端，机器人开始工作 */
+  async connect() {
     await this.rediscover();
     this.bot.start();
   }
+
+  /** 断开 QQ 协议端，机器人停止工作（控制台继续可用） */
+  disconnect() {
+    this.bot.stop();
+    this.emit('state', this.bot.state);
+  }
+
+  get running() { return this.bot.running; }
 
   async rediscover() {
     const ob = this.config.onebot;
@@ -509,6 +524,7 @@ export class Bridge extends EventEmitter {
   status() {
     return {
       connection: this.bot.state,
+      running: this.bot.running,
       lastError: this.bot.lastError,
       endpoint: { ws: this.bot.ep.wsUrl, http: this.bot.ep.httpUrl },
       self: this.self,

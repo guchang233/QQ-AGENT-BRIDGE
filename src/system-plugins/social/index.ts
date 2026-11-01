@@ -144,7 +144,7 @@ export default definePlugin({
     const firing = new Set<string>();
     ctx.setInterval(async () => {
       const d = driver();
-      if (!d) return;
+      if (!d || !bridge.running) return;
       const ec = engineCfg();
       for (const conv of enabled.list()) {
         const s = stateOf(conv);

@@ -17,6 +17,12 @@ async function load() {
   state.status = st; convs.value = c.filter((x: any) => x.unread > 0).slice(0, 8); requests.value = r;
   acts.value = await api('/api/activity?limit=12');
 }
+const busy = ref(false);
+async function toggleBot() {
+  busy.value = true;
+  try { state.status = await api(`/api/bot/${s.value.running ? 'stop' : 'start'}`, { method: 'POST' }); }
+  catch (e: any) { msg.error(e.message); } finally { busy.value = false; }
+}
 async function reconnect() { try { await api('/api/reconnect', { method: 'POST' }); msg.success('已重新探测'); load(); } catch (e: any) { msg.error(e.message); } }
 async function handleReq(flag: string, approve: boolean) { await api(`/api/requests/${flag}`, { body: { approve } }); msg.success(approve ? '已同意' : '已拒绝'); load(); }
 
@@ -32,9 +38,16 @@ const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 864
 
 <template>
   <n-space vertical :size="16">
-    <n-alert v-if="s.connection !== 'open'" type="error" title="未连接到 QQ 协议端">
+    <n-alert v-if="!s.running" type="info" title="机器人未启动">
+      未连接 QQ，不收消息、不唤醒 AI。{{ s.lastError ? `上次断开：${s.lastError}` : '' }}
+      <template #action><n-button size="small" type="primary" :loading="busy" @click="toggleBot">启动机器人</n-button></template>
+    </n-alert>
+    <n-alert v-else-if="s.connection === 'open'" type="success" title="机器人运行中">
+      <template #action><n-button size="small" :loading="busy" @click="toggleBot">停止机器人</n-button></template>
+    </n-alert>
+    <n-alert v-else type="error" title="未连接到 QQ 协议端">
       {{ s.lastError || '正在尝试连接…' }}（{{ s.endpoint?.ws }}）。请确认 SnowLuma 已启动并登录 QQ。
-      <template #action><n-button size="small" @click="reconnect">重新探测</n-button></template>
+      <template #action><n-space><n-button size="small" @click="reconnect">重新探测</n-button><n-button size="small" :loading="busy" @click="toggleBot">停止</n-button></n-space></template>
     </n-alert>
 
     <n-grid cols="2 s:4" responsive="screen" :x-gap="12" :y-gap="12">

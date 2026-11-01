@@ -118,7 +118,7 @@ async function standalone(tokenStr: string) {
   const bridge = new Bridge();
   const token = bridge.policy.findToken(tokenStr) ?? bridge.config.agents.tokens.find((t) => t.enabled);
   if (!token) throw new Error('配置中没有可用的 agent token');
-  await bridge.start();
+  await bridge.connect();
   const plugins = new PluginHost(bridge);
   await plugins.loadAll();
   const server = createMcpServer(bridge, { kind: 'agent', name: `${token.name}(stdio)`, token });
