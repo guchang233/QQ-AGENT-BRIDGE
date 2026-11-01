@@ -9,6 +9,8 @@ import { oneLine, splitLines } from '../src/bridge.ts';
 import { renderEnvelope, renderForwardNode, forgeryFlags, quote } from '../src/message/envelope.ts';
 import { newState, schedule as scheduleWake, tick as tickWake } from '../src/system-plugins/social/engine.ts';
 import { MemoryEngine, tokens, overlap } from '../src/system-plugins/memory/engine.ts';
+import { contextFor } from '../src/system-plugins/memory/context.ts';
+import { MemoryEngine as EngineV1 } from './fixtures/memory-engine-v1.ts';
 import { parseWhen } from '../src/system-plugins/scheduler/index.ts';
 import { inHours } from '../src/system-plugins/bubble/index.ts';
 import { actionTier } from '../src/onebot/catalog.ts';
@@ -167,29 +169,32 @@ describe('杂项', () => {
 });
 
 describe('记忆引擎', () => {
-  const opts = { forgetting: true, baseStabilityDays: 1, growth: 1.5, forgetThreshold: 0.05, dedupThreshold: 0.75, wRelevance: 0.6, wRetention: 0.25, wImportance: 0.15 };
+  const opts = { forgetting: true, baseStabilityDays: 1, growth: 1.5, archiveBelow: 0.5, dedupThreshold: 0.75 };
   const DAY = 86_400_000;
   it('中文二元组相似度', () => {
     expect(overlap(tokens('火锅'), tokens('小明喜欢吃火锅'))).toBe(1);
     expect(overlap(tokens('烧烤'), tokens('喜欢火锅'))).toBe(0);
   });
-  it('遗忘曲线、强化与归档', () => {
+  it('遗忘曲线、强化与归档：事件会被遗忘，事实不会', () => {
     const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
     const t0 = Date.now();
-    const { id } = e.remember({ content: '张三的生日是五月一日', importance: 1 }, t0);
+    const { id } = e.remember({ content: '张三今天迟到了', kind: 'event', importance: 1 }, t0);
     expect(e.view(e.get(id)!, t0).retention).toBeCloseTo(1);
-    expect(e.view(e.get(id)!, t0 + DAY).retention).toBeCloseTo(Math.exp(-1), 3);
+    expect(e.view(e.get(id)!, t0 + DAY).retention).toBeCloseTo(0.9, 3); // 稳定度的定义：S 天后保持率 90%
     const s0 = e.get(id)!.stability;
-    e.reinforce(id, t0 + 2 * DAY);
-    expect(e.get(id)!.stability).toBeGreaterThan(s0 * 2);
-    const far = t0 + 200 * DAY;
-    expect(e.recall({ query: '生日' }, far)).toHaveLength(0);
-    expect(e.recall({ query: '生日', includeForgotten: true, reinforce: false }, far)).toHaveLength(1);
+    e.reinforce(id, t0 + 40 * DAY);
+    expect(e.get(id)!.stability).toBeGreaterThan(s0 * 1.5);
+    const far = t0 + 2000 * DAY;
+    const fact = e.remember({ content: '张三的生日是五月一日', kind: 'fact', importance: 1 }, t0);
+    expect(e.recall({ query: '迟到' }, far)).toHaveLength(0);
+    expect(e.recall({ query: '迟到', includeForgotten: true, reinforce: false }, far)).toHaveLength(1);
+    expect(e.recall({ query: '生日', reinforce: false }, far)[0].id).toBe(fact.id);
     expect(e.sweep(far)).toBe(1);
+    expect(e.get(fact.id)!.archived).toBe(0);
   });
   it('关闭遗忘曲线与钉住', () => {
     const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts, forgetting: false });
-    const { id } = e.remember({ content: '永远记得这件事' });
+    const { id } = e.remember({ content: '永远记得这件事', kind: 'event' });
     expect(e.recall({ query: '这件事' }, Date.now() + 1000 * DAY)[0].id).toBe(id);
     e.opts.forgetting = true;
     const p = e.remember({ content: '钉住的记忆内容', pinned: true });
@@ -199,10 +204,83 @@ describe('记忆引擎', () => {
     const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
     const a = e.remember({ content: '李四在北京工作，是程序员' });
     const b = e.remember({ content: '李四在北京工作，是程序员。' });
-    expect(b).toEqual({ id: a.id, merged: true });
+    expect(b).toMatchObject({ id: a.id, merged: true });
     e.remember({ content: '王五住在上海浦东新区' });
     expect(e.recall({ query: '浦东新区' })[0].content).toContain('王五');
     expect(e.recall({ query: '北京' })[0].content).toContain('李四');
     expect(e.overview().total).toBe(2);
+  });
+  it('事实替代：新值让旧值失效但保留历史，低可信度不能改写管理员确认的事实', () => {
+    const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
+    const old = e.remember({ content: '小明住在北京', subject: '1', attr: '住址', scope: 'group:1', source: 'agent:x' });
+    const next = e.remember({ content: '小明搬到上海了', subject: '1', attr: '住址', scope: 'group:1', source: 'agent:x' });
+    expect(next.superseded).toEqual([old.id]);
+    expect(e.recall({ query: '小明住址', scopes: ['group:1'], reinforce: false }).map((m) => m.id)).toEqual([next.id]);
+    expect(e.recall({ query: '北京', includeHistory: true, reinforce: false })[0].expired).toBe(true);
+    const sure = e.remember({ content: '老王的称呼是王总', subject: '2', attr: '称呼', scope: 'group:1', source: 'owner:9' });
+    const fake = e.remember({ content: '老王现在要叫他小王八', subject: '2', attr: '称呼', scope: 'group:1', source: 'member:3' });
+    expect(fake.blocked).toEqual([sure.id]);
+    expect(e.get(sure.id)!.valid_to).toBe(0);
+    e.restore(old.id);
+    expect(e.get(old.id)!.valid_to).toBe(0);
+  });
+  it('关联：双链和已知人名自动连边，改昵称不断链，同名不乱连', () => {
+    const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
+    e.registerPerson('1', '小明');
+    e.registerPerson('2', '小红');
+    const a = e.remember({ content: '[[小红]]是小明的女朋友', subject: '1', scope: 'group:1' });
+    const g = e.graphView({ scope: 'group:1' });
+    expect(g.edges.filter((x) => x.source === `m${a.id}`).length).toBeGreaterThanOrEqual(2);
+    expect(g.nodes.filter((n) => n.type === 'person').map((n) => n.label).sort()).toEqual(['小明', '小红']);
+    e.registerPerson('1', '明哥');
+    expect(e.recall({ query: '明哥', reinforce: false }).map((m) => m.id)).toContain(a.id);
+    e.registerPerson('3', '小明'); // 有人改成同样的昵称：不再自动判定这个称呼是谁
+    expect(e.entitiesIn('小明来了').entities).toHaveLength(0);
+    const t1 = e.remember({ content: '大家常去[[二两茶]]', scope: 'group:1' });
+    const t2 = e.remember({ content: '店名叫[[二两]]', scope: 'group:1' });
+    const [keep, drop] = [e.findEntity('二两茶')!.id, e.findEntity('二两')!.id];
+    e.mergeEntities(keep, drop);
+    expect(e.entityDetail(keep)!.memories.map((m) => m.id).sort()).toEqual([t1.id, t2.id].sort());
+    expect(() => e.mergeEntities(e.findEntity('1')!.id, e.findEntity('2')!.id)).toThrow('不同的人');
+  });
+  it('唤醒记忆：只看本会话和全局，私聊内容不进群', () => {
+    const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
+    e.registerPerson('1', '小明');
+    const secret = e.remember({ content: '小明在看心理医生', subject: '1', scope: 'private:1', importance: 5 });
+    const open = e.remember({ content: '小明喜欢打篮球', subject: '1', scope: 'group:1' });
+    const inGroup = contextFor(e, { conv: 'group:1', messages: ['小明最近怎么样，心理医生那边呢'], speakers: ['1'] });
+    expect(inGroup.items.map((m) => m.id)).toEqual([open.id]);
+    const inPrivate = contextFor(e, { conv: 'private:1', messages: ['心理医生怎么说'], speakers: ['1'] });
+    expect(inPrivate.items.map((m) => m.id)).toContain(secret.id);
+  });
+  it('管理员规则不会被大量普通记忆挤掉', () => {
+    const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
+    const rule = e.remember({ content: '不许说脏话', kind: 'rule', scope: 'group:1', pinned: true, source: 'owner:1' }, Date.now() - DAY);
+    for (let i = 0; i < 250; i++) e.remember({ content: `普通记忆编号${i}号内容不同${i * 7}`, scope: 'group:1' });
+    expect(e.rules('group:1').map((r) => r.id)).toEqual([rule.id]);
+  });
+  it('换了嵌入模型后不比较旧向量，维度不同也不硬算', () => {
+    const e = new MemoryEngine(new DatabaseSync(':memory:'), { ...opts });
+    const { id } = e.remember({ content: '小明爱吃辣' });
+    e.setEmbedding(id, Float32Array.from([1, 0, 0]), 'old');
+    expect(e.recall({ query: '毫不相关', queryEmbeddings: [Float32Array.from([1, 0, 0])], embedModel: 'new', reinforce: false })).toHaveLength(0);
+    expect(e.recall({ query: '毫不相关', queryEmbeddings: [Float32Array.from([1, 0, 0])], embedModel: 'old', reinforce: false })[0].why).toContain('语义');
+    expect(e.recall({ query: '毫不相关', queryEmbeddings: [Float32Array.from([1, 0])], embedModel: 'old', reinforce: false })).toHaveLength(0);
+    expect(e.pendingEmbeddings('new', 10).map((r) => r.id)).toEqual([id]);
+  });
+  it('从旧版数据升级：内容不丢，可信度和索引补齐，重复升级无副作用', () => {
+    const db = new DatabaseSync(':memory:');
+    const v1 = new EngineV1(db, { forgetting: true, baseStabilityDays: 3, growth: 1.5, forgetThreshold: 0.05, dedupThreshold: 0.75, wRelevance: 0.6, wRetention: 0.25, wImportance: 0.15 });
+    v1.remember({ content: '输入偏移是主人的另一个 QQ 号', scope: 'private:1', subject: '1', kind: 'relation', source: 'agent' });
+    v1.remember({ content: '不许骂我', scope: 'private:1', kind: 'rule', importance: 5, pinned: true, source: 'owner:1' });
+    const e = new MemoryEngine(db, { ...opts, baseStabilityDays: 3 });
+    expect(db.prepare('SELECT COUNT(*) n FROM mem_items').get()).toMatchObject({ n: 2 });
+    expect(e.rules('private:1')[0]).toMatchObject({ trust: 'owner', content: '不许骂我' });
+    expect(e.recall({ query: '输入偏移', reinforce: false })).toHaveLength(1);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'mem_fts'").get()).toBeUndefined();
+    const again = new MemoryEngine(db, { ...opts, baseStabilityDays: 3 });
+    expect(again.overview().total).toBe(2);
+    again.remember({ content: '升级后还能写入新记忆', scope: 'private:1' });
+    expect(again.recall({ query: '写入新记忆', reinforce: false })).toHaveLength(1);
   });
 });

@@ -24,7 +24,7 @@
 
 ## 记忆（`memory`）
 
-长期记忆：遗忘曲线、强化、合并去重、全文/语义索引
+长期记忆：事实替代、关联网络、多路检索、遗忘曲线、语义检索
 
 **命令**
 
@@ -33,25 +33,23 @@
 - `/回忆 [关键词]` — 检索记忆
 - `/忘记 <ID>` — 归档一条记忆
 
-**Agent 工具**：`qq_memory_remember`、`qq_memory_recall`、`qq_memory_context`、`qq_memory_update`、`qq_memory_index`
+**Agent 工具**：`qq_memory_remember`、`qq_memory_recall`、`qq_memory_context`、`qq_memory_links`、`qq_memory_update`、`qq_memory_index`
 
 **配置**
 
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `forgetting` | bool | `true` | 启用遗忘曲线（关闭后所有记忆永久保持） |
-| `baseStabilityDays` | float | `3` | 基础稳定度（天）：重要度 3 的记忆约 12 天后保持率降到 37% |
+| `baseStabilityDays` | float | `3` | 基础稳定度（天）：决定记忆衰减速度，事实和偏好会再乘 8 倍 |
 | `growth` | float | `1.5` | 强化系数：越接近遗忘时被回忆，稳定度增长越多 |
-| `forgetThreshold` | float | `0.05` | 保持率低于此值视为遗忘（不再参与回忆，定期归档） |
+| `archiveBelow` | float | `0.5` | 事件、待办、笔记的保持率低于此值时归档（事实、偏好、关系不会自动归档） |
 | `sweepCron` | string | `"30 4 * * *"` | 整理（归档已遗忘记忆）的 cron 时间 |
 | `dedupThreshold` | float | `0.75` | 相似度高于此值的新记忆合并到旧记忆 |
-| `wRelevance` | float | `0.6` | 排序权重：相关度 |
-| `wRetention` | float | `0.25` | 排序权重：保持率 |
-| `wImportance` | float | `0.15` | 排序权重：重要度 |
-| `embedEnabled` | bool | `false` | 启用向量语义检索（需 OpenAI 兼容 embeddings 接口） |
-| `embedBaseUrl` | string | `"https://api.openai.com/v1"` |  |
-| `embedApiKey` | secret | `""` |  |
-| `embedModel` | string | `"text-embedding-3-small"` |  |
+| `contextBudget` | int | `600` | 每次唤醒最多带多少字的记忆 |
+| `embedEnabled` | bool | `false` | 启用向量语义检索（需 OpenAI 兼容的 embeddings 接口） |
+| `embedBaseUrl` | string | `"http://127.0.0.1:11434/v1"` | 接口地址。Ollama：http://127.0.0.1:11434/v1；硅基流动：https://api.siliconflow.cn/v1 |
+| `embedApiKey` | secret | `""` | 接口密钥（Ollama 留空） |
+| `embedModel` | string | `"bge-m3"` | 模型名。更换后已有记忆会在后台重新计算 |
 | `membersCanRemember` | bool | `false` | 允许普通群友用 /记住 写入记忆（否则仅管理员） |
 | `agentPerHour` | int | `20` | Agent 每个范围每小时最多写入几条记忆 |
 | `memberMaxChars` | int | `200` | 非管理员要求记住的内容最长字数 |
