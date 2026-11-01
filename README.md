@@ -84,6 +84,7 @@ claude mcp add --transport http qq http://127.0.0.1:3210/mcp --header "Authoriza
 | [docs/agent-guide.md](docs/agent-guide.md) | 给 AI / Agent 开发者：工作循环、消息格式、权限与审批 |
 | [docs/tools.md](docs/tools.md) | 全部 MCP 工具参考（自动生成） |
 | [docs/system-plugins.md](docs/system-plugins.md) | 系统插件命令与配置（自动生成） |
+| [docs/memory.md](docs/memory.md) | 记忆系统：写入、检索、关联网络、评测结果 |
 | [docs/plugins.md](docs/plugins.md) | 插件开发指南 |
 | [docs/astrbot.md](docs/astrbot.md) | AstrBot 插件兼容说明 |
 | [docs/architecture.md](docs/architecture.md) | 架构与代码导览 |

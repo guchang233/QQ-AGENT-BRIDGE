@@ -113,7 +113,14 @@ export async function callToolStateless(bridge: Bridge, caller: Caller, name: st
   return runTool(bridge, caller, t, parsed.data);
 }
 
+/** 静默会话里允许的工具：读取和写记忆，不包括任何对外发言的动作。 */
+const QUIET_ALLOWED = /^qq_(memory_|get_|search_messages$|status$|set_wake$)/;
+
 export async function runTool(bridge: Bridge, caller: Caller, t: ToolDef, args: any): Promise<ToolResult> {
+  const bound = bridge.policy.boundConv(caller);
+  if (bound && bridge.isQuiet(bound) && !QUIET_ALLOWED.test(t.name)) {
+    return { content: [{ type: 'text', text: `错误：后台整理记忆时不能使用 ${t.name}，操作未执行。这一轮只写记忆，不要发消息。` }], isError: true };
+  }
   try {
     const exec = () => t.handler({ bridge, caller }, args ?? {});
     // selfAudited 的工具内部已调用 bridge.send / bridge.callAction 完成鉴权与审计

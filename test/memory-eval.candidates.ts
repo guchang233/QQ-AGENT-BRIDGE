@@ -2,19 +2,19 @@
 import { DatabaseSync } from 'node:sqlite';
 import { MemoryEngine, type RecallQuery } from '../src/system-plugins/memory/engine.ts';
 import { contextFor } from '../src/system-plugins/memory/context.ts';
-import { fixture, NOW, type Adapter } from './memory-eval.lib.ts';
+import { fixture, NOW, type Adapter, type Fixture } from './memory-eval.lib.ts';
 
 const DAY = 86_400_000;
 const OPTS = { forgetting: true, baseStabilityDays: 3, growth: 1.5, archiveBelow: 0.5, dedupThreshold: 0.75 };
 
 interface Variant { name: string; useAttr?: boolean; forgetting?: boolean; channels?: RecallQuery['channels']; agentQueries?: boolean }
 
-function adapter(v: Variant): Adapter {
+function adapter(v: Variant, fx: Fixture): Adapter {
   const engine = new MemoryEngine(new DatabaseSync(':memory:'), { ...OPTS, forgetting: v.forgetting ?? true });
-  for (const [qq, names] of Object.entries(fixture.people)) engine.registerPerson(qq, ...names);
+  for (const [qq, names] of Object.entries(fx.people)) engine.registerPerson(qq, ...names);
   const keyOf = new Map<number, string>();
   // 按时间先后写入，事实替代才符合真实顺序
-  for (const m of [...fixture.memories].sort((a, b) => b.ageDays - a.ageDays)) {
+  for (const m of [...fx.memories].sort((a, b) => b.ageDays - a.ageDays)) {
     const r = engine.remember({ content: m.content, scope: m.scope, subject: m.subject, kind: m.kind as any, importance: m.importance, attr: v.useAttr === false ? undefined : m.attr, source: 'agent:eval' }, NOW - m.ageDays * DAY);
     keyOf.set(r.id, m.key);
   }
@@ -29,7 +29,7 @@ function adapter(v: Variant): Adapter {
   };
 }
 
-export function candidateAdapters(): Adapter[] {
+export function candidateAdapters(fx: Fixture = fixture): Adapter[] {
   return ([
     { name: '仅全文', channels: { entity: false, graph: false } },
     { name: '+人物', channels: { graph: false } },
@@ -37,5 +37,5 @@ export function candidateAdapters(): Adapter[] {
     { name: '+关联（关替代）', useAttr: false },
     { name: '+关联（关遗忘）', forgetting: false },
     { name: '+关联+Agent 多路查询', agentQueries: true },
-  ] as Variant[]).map(adapter);
+  ] as Variant[]).map((v) => adapter(v, fx));
 }

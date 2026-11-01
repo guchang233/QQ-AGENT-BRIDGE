@@ -1,3 +1,5 @@
+import { EventEmitter } from 'node:events';
+import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +14,7 @@ process.env.QAB_CONFIG = path.join(tmp, 'qab.yaml');
 const { ConfigSchema } = await import('../src/config.ts');
 const { Bridge } = await import('../src/bridge.ts');
 const { PluginHost } = await import('../src/plugins/host.ts');
+const { callToolStateless } = await import('../src/mcp/server.ts');
 const { startWeb } = await import('../src/web/server.ts');
 
 const WS = 23001, HTTP = 23000, PORT = 23210;
@@ -350,6 +353,102 @@ describe('系统插件', () => {
     await bridge.connect();
     await bridge.connect();
     expect((mock as any).clients.size).toBe(1);
+  });
+
+  it('后台提炼：只读写记忆，发消息被拒绝，回合结束后恢复', async () => {
+    const host = bridge.pluginHost!;
+    const driver: any = Object.assign(new EventEmitter(), {
+      id: 'dsh', kind: 'test', label: '测试驱动', wakes: [] as any[],
+      async start() {}, async stop() {}, isBusy: () => false, status: () => ({ id: 'dsh', kind: 'test', label: '测试驱动', state: 'ready', detail: '', busy: [], sessions: 0 }),
+      async wake(w: any) { this.wakes.push(w); },
+    });
+    const before = bridge.drivers.get('dsh');
+    bridge.registerDriver(driver);
+    host.saveConfig('social', { ...host.plugins.get('social')!.config, convs: ['group:111'], digestEnabled: true, digestEveryMessages: 10, batchWindowSec: 0 });
+    await host.reload('social');
+    const svc: any = host.services.get('social');
+    const id = String(mock.pushGroupMessage(111, 30003, [{ type: 'text', data: { text: '我下个月要搬去成都了' } }]));
+    await waitFor(() => !!bridge.store.getMessage(id, 'group:111'));
+    driver.wakes.length = 0;
+    svc.schedule('group:111', 'memoryDigest');
+    await waitFor(() => driver.wakes.some((w: any) => w.reason === 'memoryDigest'), 6000);
+    const wake = driver.wakes.find((w: any) => w.reason === 'memoryDigest');
+    expect(wake.prompt).toContain('后台整理记忆');
+    expect(wake.prompt).toContain('搬去成都');
+
+    const token: any = { name: 'dsh', token: 'x', tiers: ['read', 'send'], groups: [], private: [], enabled: true, sessionBound: true, toolAllow: [] };
+    const caller: any = { kind: 'agent', name: 'dsh', token };
+    const convToken = bridge.policy.issueConvToken('group:111');
+    const send = await callToolStateless(bridge, caller, 'qq_send', { conv: 'group:111', message: '这条不该发出去', convToken });
+    expect(send.isError).toBe(true);
+    expect((send.content[0] as any).text).toContain('后台整理记忆');
+    const sticker = await callToolStateless(bridge, caller, 'qq_poke', { conv: 'group:111', userId: '30003', convToken });
+    expect(sticker.isError).toBe(true);
+    const write = await callToolStateless(bridge, caller, 'qq_memory_remember', { content: '小李下个月搬去成都', fromMsgId: id, attr: '住址', convToken });
+    expect(write.isError).toBeFalsy();
+    expect((bridge.store.db.prepare("SELECT scope, trust, source_msg FROM mem_items WHERE content = '小李下个月搬去成都'").get() as any)).toMatchObject({ scope: 'group:111', trust: 'member', source_msg: `group:111|${id}` });
+
+    const backlog = Number((bridge.store.db.prepare('SELECT COUNT(*) n FROM messages WHERE conv = ? AND seq > ? AND is_self = 0').get('group:111', Number(bridge.store.db.prepare("SELECT value FROM kv WHERE key LIKE '%digest:group:111'").get()?.value ?? 0)) as any).n);
+    expect(backlog).toBe(0); // 游标已推进，同一批消息不会重复提炼
+    driver.emit('turn-end', 'group:111', { reason: 'completed', text: '', tools: ['qq_memory_remember'], durationMs: 1 });
+    const after = await callToolStateless(bridge, caller, 'qq_send', { conv: 'group:111', message: '恢复发言', convToken });
+    expect(after.isError).toBeFalsy();
+
+    host.saveConfig('social', { ...host.plugins.get('social')!.config, convs: [], digestEnabled: false, batchWindowSec: 8 });
+    if (before) bridge.drivers.set('dsh', before); else bridge.drivers.delete('dsh');
+    await host.reload('social');
+  });
+
+  it('语义检索：向量由后台补齐，换模型后重算，同义词能搜到', async () => {
+    // 假的 OpenAI 兼容接口：含「辣」的文本向量相近
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        const j = JSON.parse(body);
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ data: j.input.map((t: string, index: number) => ({ index, embedding: /辣|川菜/.test(t) ? [1, 0.1, 0] : [0, 1, 0.2] })) }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as any).port;
+    const host = bridge.pluginHost!;
+    const base = host.plugins.get('memory')!.config;
+    const apply = async (model: string) => { host.saveConfig('memory', { ...base, embedEnabled: true, embedBaseUrl: `http://127.0.0.1:${port}/v1`, embedModel: model }); await host.reload('memory'); };
+    await apply('fake-a');
+    let svc: any = host.services.get('memory');
+    const { id } = await svc.remember({ content: '老张无辣不欢', scope: 'global' });
+    while (await svc.embedPending());
+    expect(svc.engine.get(id).embed_model).toBe('fake-a');
+    const hit = await svc.recall({ query: '川菜馆', scopes: ['global'], reinforce: false });
+    expect(hit.map((m: any) => m.id)).toContain(id);
+    expect(hit.find((m: any) => m.id === id).why).toContain('语义');
+    await apply('fake-b');
+    svc = host.services.get('memory');
+    expect(svc.engine.pendingEmbeddings('fake-b', 1000).map((r: any) => r.id)).toContain(id);
+    while (await svc.embedPending());
+    expect(svc.engine.get(id).embed_model).toBe('fake-b');
+    server.close();
+    host.saveConfig('memory', { ...base, embedEnabled: false });
+    await host.reload('memory');
+  });
+
+  it('记忆工具的范围限制：会话绑定的 Agent 改不了别的会话，私聊内容进不了全局', async () => {
+    const svc: any = bridge.pluginHost!.services.get('memory');
+    const other = await svc.remember({ content: '别的群的记忆内容', scope: 'group:222', source: 'agent:x' });
+    const token: any = { name: 'dsh', token: 'x', tiers: ['read', 'send'], groups: [], private: [], enabled: true, sessionBound: true, toolAllow: [] };
+    const caller: any = { kind: 'agent', name: 'dsh', token };
+    const convToken = bridge.policy.issueConvToken('private:20001');
+    const edit = await callToolStateless(bridge, caller, 'qq_memory_update', { id: other.id, purge: true, convToken });
+    expect((edit.content[0] as any).text).toBe('不存在');
+    expect(svc.engine.get(other.id)).toBeTruthy();
+    await callToolStateless(bridge, caller, 'qq_memory_remember', { content: '私聊里说的秘密内容', scope: 'global', convToken });
+    expect((bridge.store.db.prepare("SELECT scope FROM mem_items WHERE content = '私聊里说的秘密内容'").get() as any).scope).toBe('private:20001');
+    await callToolStateless(bridge, caller, 'qq_memory_remember', { content: '没填范围的记忆内容', convToken });
+    expect((bridge.store.db.prepare("SELECT scope FROM mem_items WHERE content = '没填范围的记忆内容'").get() as any).scope).toBe('private:20001');
+    const sure = await svc.remember({ content: '管理员确认过的事实', scope: 'private:20001', source: 'owner:1' });
+    const change = await callToolStateless(bridge, caller, 'qq_memory_update', { id: sure.id, content: '被改掉了', convToken });
+    expect(change.isError).toBe(true);
   });
 
   it('定时：安排并触发', async () => {

@@ -67,6 +67,15 @@ export class Policy extends EventEmitter {
 
   constructor(public cfg: () => Config) { super(); }
 
+  /** 会话绑定的调用方当前所在的会话。 */
+  boundConv(caller: Caller): string | undefined {
+    const t = caller.token;
+    if (!t?.sessionBound) return undefined;
+    if (t.groups[0] && t.groups[0] !== '__none__') return `group:${t.groups[0]}`;
+    if (t.private[0] && t.private[0] !== '__none__') return `private:${t.private[0]}`;
+    return undefined;
+  }
+
   /** 会话是否在全局访问范围内（白/黑名单）。 */
   convAllowed(c: ConvRef): boolean {
     const a = this.cfg().access;

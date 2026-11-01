@@ -99,6 +99,10 @@
 | `wakeMaxChars` | int | `6000` | 唤醒消息快照字数上限 |
 | `withMemory` | bool | `true` | 唤醒时附带相关记忆（需记忆插件） |
 | `forwardText` | bool | `false` | 兜底：Agent 本轮没调用发送工具时，把它的文字回复发出去（一般不建议） |
+| `digestEnabled` | bool | `false` | 后台提炼记忆：定期跑一轮 AI，从聊天里提炼记忆（潜水时看到的内容也能记下来）。会消耗 Token |
+| `digestEveryMessages` | int | `200` | 累计多少条新消息后提炼一次 |
+| `digestCron` | string | `""` | 定时提炼的 cron（如 0 4 * * * 每天 4 点），留空 = 只按消息数触发 |
+| `digestMaxMessages` | int | `80` | 每轮最多看多少条消息 |
 
 ## 请示管理员（`ask-admin`）
 

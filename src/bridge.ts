@@ -326,6 +326,11 @@ export class Bridge extends EventEmitter {
     return this.nameOf(conv, ref.id) ?? '';
   }
 
+  /** 静默会话：这段时间 Agent 在该会话只能读和写记忆，不能对外发言（后台提炼记忆时用）。 */
+  private quiet = new Map<string, number>();
+  setQuiet(conv: string, ms: number) { if (ms > 0) this.quiet.set(conv, Date.now() + ms); else this.quiet.delete(conv); }
+  isQuiet(conv: string) { return (this.quiet.get(conv) ?? 0) > Date.now(); }
+
   /** 是否管理员：只按 QQ 号判断。 */
   isOwner(qq: string | number) { return this.config.owners.map(String).includes(String(qq)); }
 

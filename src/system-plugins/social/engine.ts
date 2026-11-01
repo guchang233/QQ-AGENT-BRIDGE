@@ -14,14 +14,14 @@ export type Mode = 'active' | 'diving' | 'sleeping';
 
 export const PRIORITY: Record<string, number> = {
   private: 100, poke: 95, atMention: 90, question: 80, speaker: 75, nameMention: 70, keyword: 60, anyMessage: 50,
-  replyCheck: 40, timeout: 30, probability: 25, proactive: 20, manual: 110, bootstrap: 105, adminReply: 85, bubble: 45, bubbleEnd: 22,
+  replyCheck: 40, timeout: 30, probability: 25, proactive: 20, manual: 110, bootstrap: 105, adminReply: 85, bubble: 45, bubbleEnd: 22, memoryDigest: 10,
 };
 
 export const REASON_LABEL: Record<string, string> = {
   private: '私聊新消息', poke: '有人戳了你', atMention: '有人 @ 你或回复了你', question: '有人在问问题', speaker: '你关注的人说话了',
   nameMention: '有人提到了你的名字', keyword: '出现了你关注的关键词', anyMessage: '群里有新消息（你处于活跃状态）',
   replyCheck: '你刚说过话，回来看看有没有人接', timeout: '沉睡结束，回来看看', probability: '你随手刷了一下群', proactive: '群里安静了一阵，你可以考虑主动开个话题（也可以不说）',
-  manual: '管理员手动唤醒', adminReply: '管理员回复了你的请示，按答复去处理', bubble: '你刚上线，出来冒个泡', bubbleEnd: '冒泡时间到了，准备潜水', bootstrap: '你刚加入这个会话，先熟悉一下',
+  manual: '管理员手动唤醒', adminReply: '管理员回复了你的请示，按答复去处理', bubble: '你刚上线，出来冒个泡', bubbleEnd: '冒泡时间到了，准备潜水', memoryDigest: '后台整理记忆', bootstrap: '你刚加入这个会话，先熟悉一下',
 };
 
 export interface Triggers {

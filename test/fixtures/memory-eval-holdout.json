@@ -1,0 +1,72 @@
+{
+  "_comment": "留出集：检索实现完成后才编写，用来检验有没有对主评测集过拟合。不要为了提分调整检索参数后再把这里的成绩当作泛化成绩。",
+  "people": {
+    "20001": ["阿泽"],
+    "20002": ["Sherry", "雪莉"],
+    "20003": ["大刘"],
+    "20004": ["小鱼"],
+    "20005": ["鹏哥"]
+  },
+  "memories": [
+    { "key": "h02", "content": "阿泽之前在重庆上大学", "scope": "group:10", "subject": "20001", "kind": "fact", "importance": 3, "ageDays": 240, "attr": "学校" },
+    { "key": "h01", "content": "阿泽现在在成都读研，学的是土木", "scope": "group:10", "subject": "20001", "kind": "fact", "importance": 3, "ageDays": 30, "attr": "学校" },
+    { "key": "h03", "content": "Sherry是HR，在深圳腾讯上班", "scope": "group:10", "subject": "20002", "kind": "fact", "importance": 3, "ageDays": 110, "attr": "工作" },
+    { "key": "h04", "content": "Sherry本名叫李雪", "scope": "group:10", "subject": "20002", "kind": "fact", "importance": 2, "ageDays": 95 },
+    { "key": "h05", "content": "大刘开网约车，晚上才有空", "scope": "group:10", "subject": "20003", "kind": "fact", "importance": 3, "ageDays": 70 },
+    { "key": "h06", "content": "大刘有两个女儿，大的上三年级", "scope": "group:10", "subject": "20003", "kind": "fact", "importance": 3, "ageDays": 130 },
+    { "key": "h07", "content": "[[小鱼]]是[[大刘]]的表弟", "scope": "group:10", "subject": "20004", "kind": "relation", "importance": 3, "ageDays": 88 },
+    { "key": "h08", "content": "小鱼不喝咖啡，一喝就心慌", "scope": "group:10", "subject": "20004", "kind": "preference", "importance": 3, "ageDays": 66 },
+    { "key": "h09", "content": "鹏哥养了两条德牧", "scope": "group:10", "subject": "20005", "kind": "fact", "importance": 3, "ageDays": 140 },
+    { "key": "h10", "content": "鹏哥是退伍军人", "scope": "group:10", "subject": "20005", "kind": "fact", "importance": 3, "ageDays": 190 },
+    { "key": "h11", "content": "群里约好下周六去爬青城山", "scope": "group:10", "subject": "", "kind": "event", "importance": 3, "ageDays": 3 },
+    { "key": "h12", "content": "爬山的集合地点在成都东站", "scope": "group:10", "subject": "", "kind": "event", "importance": 3, "ageDays": 2 },
+    { "key": "h13", "content": "[[鹏哥]]的老婆是[[Sherry]]的大学同学", "scope": "group:10", "subject": "20005", "kind": "relation", "importance": 3, "ageDays": 77 },
+    { "key": "h14", "content": "阿泽喜欢别人叫他泽哥", "scope": "group:10", "subject": "20001", "kind": "preference", "importance": 3, "ageDays": 150, "attr": "称呼" },
+    { "key": "h15", "content": "阿泽改口了，现在让大家叫他老泽", "scope": "group:10", "subject": "20001", "kind": "preference", "importance": 3, "ageDays": 12, "attr": "称呼" },
+    { "key": "h16", "content": "Sherry打算辞职，还没告诉公司", "scope": "private:20002", "subject": "20002", "kind": "event", "importance": 5, "ageDays": 4 },
+    { "key": "h17", "content": "鹏哥的腿伤又复发了", "scope": "private:20005", "subject": "20005", "kind": "event", "importance": 4, "ageDays": 9 },
+    { "key": "h18", "content": "大刘的车是比亚迪秦", "scope": "group:10", "subject": "20003", "kind": "fact", "importance": 2, "ageDays": 60 },
+    { "key": "h19", "content": "群里的云服务器账号归小鱼管", "scope": "group:10", "subject": "20004", "kind": "fact", "importance": 4, "ageDays": 45 },
+    { "key": "h20", "content": "小鱼最近迷上了滑雪", "scope": "group:10", "subject": "20004", "kind": "event", "importance": 2, "ageDays": 18 },
+    { "key": "h21", "content": "不要在群里讨论彩票", "scope": "global", "subject": "", "kind": "note", "importance": 3, "ageDays": 100 }
+  ],
+  "queries": [
+    { "id": "a01", "type": "短词", "conv": "group:10", "query": "德牧", "expect": ["h09"] },
+    { "id": "a02", "type": "短词", "conv": "group:10", "query": "滑雪", "expect": ["h20"] },
+    { "id": "a03", "type": "短词", "conv": "group:10", "query": "青城山", "expect": ["h11"] },
+
+    { "id": "a04", "type": "整句", "conv": "group:10", "query": "大刘的小孩多大了", "expect": ["h06"] },
+    { "id": "a05", "type": "整句", "conv": "group:10", "query": "小鱼能喝咖啡吗", "expect": ["h08"] },
+    { "id": "a06", "type": "整句", "conv": "group:10", "query": "谁管云服务器", "expect": ["h19"] },
+    { "id": "a07", "type": "整句", "conv": "group:10", "query": "鹏哥以前是干什么的", "expect": ["h10"] },
+    { "id": "a08", "type": "整句", "conv": "group:10", "query": "集合地点在哪", "expect": ["h12"] },
+    { "id": "a09", "type": "整句", "conv": "group:10", "query": "雪莉在哪上班", "expect": ["h03"] },
+
+    { "id": "a10", "type": "同义", "conv": "group:10", "query": "谁是开车的司机", "agentQueries": ["司机", "开车", "网约车"], "expect": ["h05"] },
+    { "id": "a11", "type": "同义", "conv": "group:10", "query": "谁家里有狗", "agentQueries": ["狗", "宠物", "德牧"], "expect": ["h09"] },
+    { "id": "a12", "type": "同义", "conv": "group:10", "query": "谁是做人力资源的", "agentQueries": ["人力资源", "HR", "招聘"], "expect": ["h03"] },
+    { "id": "a13", "type": "同义", "conv": "group:10", "query": "有人喜欢运动吗", "agentQueries": ["运动", "滑雪", "爬山", "健身"], "expect": ["h20", "h11"], "match": "any" },
+
+    { "id": "a14", "type": "多跳", "conv": "group:10", "query": "小鱼的表哥开什么车", "expect": ["h18"] },
+    { "id": "a15", "type": "多跳", "conv": "group:10", "query": "小鱼的表哥有几个孩子", "expect": ["h06"] },
+    { "id": "a16", "type": "多跳", "conv": "group:10", "query": "鹏哥老婆的大学同学在哪工作", "expect": ["h03"] },
+
+    { "id": "a17", "type": "更新", "conv": "group:10", "query": "阿泽现在在哪上学", "expect": ["h01"], "forbid": ["h02"] },
+    { "id": "a18", "type": "更新", "conv": "group:10", "query": "怎么称呼阿泽", "expect": ["h15"], "forbid": ["h14"] },
+
+    { "id": "a19", "type": "隔离", "conv": "group:10", "query": "Sherry要辞职吗", "forbid": ["h16"] },
+    { "id": "a20", "type": "隔离", "conv": "group:10", "query": "鹏哥身体怎么样", "forbid": ["h17"] },
+    { "id": "a21", "type": "隔离", "conv": "private:20002", "query": "辞职的事", "expect": ["h16"] },
+
+    { "id": "a22", "type": "噪音", "conv": "group:10", "query": "明天天气怎么样" },
+    { "id": "a23", "type": "噪音", "conv": "group:10", "query": "推荐一部科幻电影" },
+    { "id": "a24", "type": "噪音", "conv": "group:10", "query": "python怎么读文件" }
+  ],
+  "wakes": [
+    { "id": "b01", "conv": "group:10", "speakers": ["20004"], "messages": ["来杯拿铁提提神"], "expect": ["h08"] },
+    { "id": "b02", "conv": "group:10", "speakers": ["20005"], "messages": ["下周六几点出发"], "expect": ["h11"], "forbid": ["h17"] },
+    { "id": "b03", "conv": "group:10", "speakers": ["20003"], "messages": ["今晚又接了个长途单"], "expect": ["h05"] },
+    { "id": "b04", "conv": "group:10", "speakers": ["20001"], "messages": ["有人叫我吗"], "expect": ["h15"], "forbid": ["h14"] },
+    { "id": "b05", "conv": "group:10", "speakers": ["20002"], "messages": ["最近工作好累"], "expect": ["h03"], "forbid": ["h16"] }
+  ]
+}

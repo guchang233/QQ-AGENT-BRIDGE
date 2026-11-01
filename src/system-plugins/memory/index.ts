@@ -88,15 +88,17 @@ export default definePlugin({
     // 后台补齐向量：新记忆、换模型后的旧记忆
     const EMBED_BATCH = 16;
     let embedding = false;
-    ctx.setInterval(async () => {
-      if (!c.embedEnabled || embedding) return;
+    async function embedPending() {
+      if (!c.embedEnabled || embedding) return 0;
       embedding = true;
       try {
         const rows = engine.pendingEmbeddings(c.embedModel, EMBED_BATCH);
         const vectors = await embedMany(rows.map((r) => engine.embedText(r)));
         vectors?.forEach((v, i) => engine.setEmbedding(rows[i].id, v, c.embedModel));
+        return vectors?.length ?? 0;
       } finally { embedding = false; }
-    }, 30_000);
+    }
+    ctx.setInterval(embedPending, 30_000);
 
     const subjectName = (qq: string) => { const e = engine.findEntity(qq); return e && e.name !== qq ? `${oneLine(e.name, 30)}(${qq})` : qq; };
     const fmt = (m: MemoryView, opts: { why?: boolean } = {}) => [
@@ -126,6 +128,7 @@ export default definePlugin({
         return contextFor(engine, { conv, messages: texts, speakers, budget: c.contextBudget, queryEmbeddings, embedModel: c.embedEnabled ? c.embedModel : undefined });
       },
       format: fmt,
+      embedPending,
       /** 管理员设定的规则（本会话 + 全局） */
       rules: (conv: string) => engine.rules(conv),
     };
@@ -157,14 +160,6 @@ export default definePlugin({
 
     // ------------------------------------------------------------ Agent 工具
     const visibleTo = (caller: any) => (scope: string) => scope === 'global' || ctx.bridge.policy.visible(caller, scope);
-    /** 会话绑定的调用方当前所在的会话；普通 token 没有这个概念。 */
-    const boundConv = (caller: any): string | undefined => {
-      const t = caller.token;
-      if (!t?.sessionBound) return undefined;
-      if (t.groups[0] && t.groups[0] !== '__none__') return `group:${t.groups[0]}`;
-      if (t.private[0] && t.private[0] !== '__none__') return `private:${t.private[0]}`;
-      return undefined;
-    };
     const refuse = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
     const scopeDesc = '范围：不填就是当前会话；global（全局）只在管理员要求时使用，所有会话都能看到';
     ctx.tool({
@@ -186,7 +181,7 @@ export default definePlugin({
         fromMsgId: z.union([z.string(), z.number()]).transform(String).optional().describe('如果是某人要求你记住的，填他那条消息的 id；你自己观察到的就不填'),
       },
       handler: async (a, caller) => {
-        const here = boundConv(caller);
+        const here = ctx.bridge.policy.boundConv(caller);
         const wanted = a.scope ?? here ?? 'global';
         // 会话绑定的 Agent 只能写自己会话或 global 范围
         if (wanted !== 'global') ctx.bridge.policy.assertConv(caller, parseConv(wanted));
