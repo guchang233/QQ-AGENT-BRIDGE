@@ -546,12 +546,13 @@ export class MemoryEngine {
     if (!r || (visible && !visible(r.scope))) return null;
     const ok = (x: MemoryRow | undefined) => !!x && (!visible || visible(x.scope));
     const edges = this.db.prepare("SELECT rel, dst FROM mem_edges WHERE src = ? AND dst_kind = 'e'").all(id) as any[];
-    const entities = edges.map((e) => { const x = this.entities().find((n) => n.id === Number(e.dst)); return x && { id: x.id, kind: x.kind, name: x.name, rel: e.rel as string }; }).filter(Boolean);
+    const entities = [...new Set(edges.map((e) => Number(e.dst)))].map((dst) => { const x = this.entities().find((n) => n.id === dst); return x && { id: x.id, kind: x.kind, name: x.name }; }).filter(Boolean);
     const replaced = (this.db.prepare("SELECT dst FROM mem_edges WHERE src = ? AND rel = 'supersedes'").all(id) as any[]).map((e) => this.get(Number(e.dst))).filter(ok);
     const ids = edges.map((e) => Number(e.dst));
     const related = ids.length ? (this.db.prepare(`SELECT DISTINCT src FROM mem_edges WHERE dst_kind = 'e' AND rel <> 'tag' AND dst IN (${ids.map(() => '?').join(',')}) AND src <> ? LIMIT 40`).all(...ids, id) as any[]).map((e) => this.get(Number(e.src))).filter(ok) : [];
-    const brief = (m: MemoryRow | undefined) => m && ({ id: m.id, content: m.content, scope: m.scope, expired: m.valid_to > 0 });
-    return { memory: this.view(r), entities, supersededBy: r.superseded_by ? brief(this.get(r.superseded_by)) : null, replaced: replaced.map(brief), related: related.map(brief) };
+    const brief = (m: MemoryRow | undefined) => m && ({ id: m.id, content: plainContent(m.content), scope: m.scope, expired: m.valid_to > 0 });
+    return { memory: this.view(r), entities, supersededBy: r.superseded_by ? brief(this.get(r.superseded_by)) : null, replaced: replaced.map(brief),
+      related: related.map(brief).sort((a, b) => Number(a!.expired) - Number(b!.expired)) };
   }
 
   entityDetail(id: number, visible?: (scope: string) => boolean) {

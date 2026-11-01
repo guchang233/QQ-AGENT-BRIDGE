@@ -31,6 +31,15 @@ await startWeb(bridge, plugins);
 await bridge.connect();
 await plugins.loadAll();
 
+// 样例记忆：让「记忆 → 关联网络」打开就有内容
+const memory = plugins.services.get('memory') as any;
+const sample = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'memory-eval.json'), 'utf8'));
+for (const [qq, names] of Object.entries<string[]>(sample.people)) memory.engine.registerPerson(qq, ...names);
+const DAY = 86_400_000;
+for (const m of [...sample.memories].sort((a: any, b: any) => b.ageDays - a.ageDays)) {
+  memory.engine.remember({ ...m, source: m.scope.startsWith('private') ? 'member:demo' : 'agent:demo' }, Date.now() - m.ageDays * DAY);
+}
+
 const lines = ['今天吃什么', '有人打游戏吗', '哈哈哈哈', '这个 bug 修好了没', '早安', '晚上开黑'];
 let i = 0;
 setInterval(() => {

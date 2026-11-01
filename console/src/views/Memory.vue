@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHint from '../components/PageHint.vue';
+import MemoryGraph from '../components/MemoryGraph.vue';
 import { h, onMounted, ref } from 'vue';
 import {
   NDataTable, NInput, NSpace, NButton, NPopconfirm, NText, NProgress, NTag, NCard, NGrid, NGi, NStatistic, NModal, NForm, NFormItem,
@@ -13,10 +14,12 @@ const ov = ref<any>(null);
 const scope = ref('');
 const q = ref('');
 const mode = ref<'list' | 'recall' | 'archived'>('list');
+const tab = ref<'list' | 'graph'>('graph');
 const unavailable = ref('');
 const showAdd = ref(false);
 const draft = ref({ content: '', scope: 'global', subject: '', kind: 'fact', tags: '', importance: 3, pinned: false });
-const KIND: Record<string, string> = { fact: '事实', preference: '偏好', event: '事件', relation: '关系', task: '待办', note: '笔记' };
+const KIND: Record<string, string> = { fact: '事实', preference: '偏好', event: '事件', relation: '关系', task: '待办', note: '笔记', rule: '规则' };
+const TRUST: Record<string, string> = { owner: '管理员确认', self: 'AI 观察', imported: '导入', member: '群友自述' };
 
 async function load() {
   try {
@@ -35,8 +38,8 @@ async function add() {
 const cols: DataTableColumns<any> = [
   { title: '#', key: 'id', width: 60 },
   { title: '内容', key: 'content', render: (r) => h('div', [
-    h('div', { style: 'white-space:pre-wrap' }, r.content),
-    h('div', { style: 'font-size:12px;opacity:.6;margin-top:2px' }, [r.scope, r.subject ? ` · 关于 ${r.subject}` : '', r.tags ? ` · #${r.tags.split(',').join(' #')}` : ''].join('')),
+    h('div', { style: `white-space:pre-wrap${r.expired ? ';opacity:.5;text-decoration:line-through' : ''}` }, r.content),
+    h('div', { style: 'font-size:12px;opacity:.6;margin-top:2px' }, [r.scope, r.subject ? ` · 关于 ${r.subject}` : '', r.attr ? ` · ${r.attr}` : '', ` · ${TRUST[r.trust] ?? r.trust}`, r.tags ? ` · #${r.tags.split(',').join(' #')}` : '', r.why?.length ? ` · 取出原因：${r.why.join('、')}` : ''].join('')),
   ]) },
   { title: '类型', key: 'kind', width: 70, render: (r) => h(NTag, { size: 'small', bordered: false }, { default: () => KIND[r.kind] ?? r.kind }) },
   { title: '重要', key: 'importance', width: 60, render: (r) => '★'.repeat(r.importance) },
@@ -58,14 +61,22 @@ onMounted(load);
   <div class="page">
     <n-alert v-if="unavailable" type="warning">{{ unavailable }}</n-alert>
     <div v-if="ov" class="ministats">
+      <n-radio-group v-model:value="tab" size="small">
+        <n-radio-button value="graph">关联网络</n-radio-button>
+        <n-radio-button value="list">列表</n-radio-button>
+      </n-radio-group>
       <span><b>{{ ov.total }}</b> 条记忆</span>
+      <span><b>{{ ov.superseded }}</b> 已被替代</span>
       <span><b>{{ ov.fading }}</b> 即将遗忘</span>
       <span><b>{{ ov.archived }}</b> 已归档</span>
       <span><b>{{ ov.bySubject.length }}</b> 涉及人数</span>
       <span>遗忘曲线<b>{{ ov.forgetting ? '开启' : '关闭' }}</b></span>
+      <span>语义检索<b>{{ ov.embedding || '未启用' }}</b></span>
     </div>
-    <PageHint text="保持率越低越接近遗忘，被回忆时会回升。">
-      保持率 R = e^(−Δt/S)：越久没被回忆越低；每次被回忆，稳定度 S 会增长（越接近遗忘时复习增长越多）。遗忘参数在「插件 → 记忆 → 配置」中调整。
+    <MemoryGraph v-if="tab === 'graph' && !unavailable" />
+    <template v-else>
+    <PageHint text="保持率越低越靠后，事件和待办过低时会被归档；事实和偏好不会自动归档。">
+      保持率 R = (1 + 19/81 · t/S)^-0.5，S 是保持率降到 90% 的天数，每次被回忆都会增长。参数在「插件 → 记忆 → 配置」中调整。被新值替代的旧事实会显示删除线，保留历史但不再被取出。
     </PageHint>
     <div class="toolbar">
       <n-radio-group v-model:value="mode" size="small" @update:value="load">
@@ -82,6 +93,7 @@ onMounted(load);
       <n-button size="small" type="primary" @click="showAdd = true">写入记忆</n-button>
     </div>
     <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 215px)'" :scroll-x="820" />
+    </template>
 
     <n-modal v-model:show="showAdd" preset="card" title="写入记忆" style="max-width: 520px">
       <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="70">
@@ -99,7 +111,7 @@ onMounted(load);
 </template>
 
 <style scoped>
-.ministats { display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 12px; }
+.ministats { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 18px; font-size: 12px; }
 .ministats span { opacity: .75; }
 .ministats b { margin: 0 3px; font-size: 15px; font-weight: 600; }
 </style>
