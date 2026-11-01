@@ -39,15 +39,15 @@ const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 864
 <template>
   <n-space vertical :size="16">
     <n-alert v-if="!s.running" type="info" title="机器人未启动">
-      未连接 QQ，不收消息、不唤醒 AI。{{ s.lastError ? `上次断开：${s.lastError}` : '' }}
-      <template #action><n-button size="small" type="primary" :loading="busy" @click="toggleBot">启动机器人</n-button></template>
+      <div>未连接 QQ，不收消息、不唤醒 AI。{{ s.lastError ? `上次断开：${s.lastError}` : '' }}</div>
+      <n-button style="margin-top: 8px" type="primary" :loading="busy" @click="toggleBot">启动机器人</n-button>
     </n-alert>
     <n-alert v-else-if="s.connection === 'open'" type="success" title="机器人运行中">
-      <template #action><n-button size="small" :loading="busy" @click="toggleBot">停止机器人</n-button></template>
+      <n-button size="small" :loading="busy" @click="toggleBot">停止机器人</n-button>
     </n-alert>
     <n-alert v-else type="error" title="未连接到 QQ 协议端">
-      {{ s.lastError || '正在尝试连接…' }}（{{ s.endpoint?.ws }}）。请确认 SnowLuma 已启动并登录 QQ。
-      <template #action><n-space><n-button size="small" @click="reconnect">重新探测</n-button><n-button size="small" :loading="busy" @click="toggleBot">停止</n-button></n-space></template>
+      <div>{{ s.lastError || '正在尝试连接…' }}（{{ s.endpoint?.ws }}）。请确认 SnowLuma 已启动并登录 QQ。</div>
+      <n-space style="margin-top: 8px"><n-button size="small" @click="reconnect">重新探测</n-button><n-button size="small" :loading="busy" @click="toggleBot">停止</n-button></n-space>
     </n-alert>
 
     <n-grid cols="2 s:4" responsive="screen" :x-gap="12" :y-gap="12">
