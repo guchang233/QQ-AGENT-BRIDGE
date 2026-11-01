@@ -6,8 +6,8 @@ import {
   NMenu, NBadge, NTag, NSpace, NButton, NSpin, NIcon, darkTheme, zhCN, dateZhCN, useOsTheme, type MenuOption, type GlobalThemeOverrides,
 } from 'naive-ui';
 import {
-  SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HappyOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
-  TerminalOutline, BookOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, PeopleOutline, StatsChartOutline, PulseOutline,
+  SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
+  TerminalOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, StatsChartOutline, PulseOutline,
 } from '@vicons/ionicons5';
 import { state, checkSession, api, isNarrow } from './api';
 import Login from './components/Login.vue';
@@ -45,12 +45,9 @@ const menu = computed<MenuOption[]>(() => [
   { type: 'group', label: 'QQ', key: 'g1', children: [
     { label: '聊天', key: '/chat', icon: icon(ChatbubblesOutline) },
     { label: 'QQ空间', key: '/qzone', icon: icon(PlanetOutline) },
-    { label: '表情包', key: '/stickers', icon: icon(HappyOutline) },
   ] },
   { type: 'group', label: 'AI', key: 'g2', children: [
     { label: () => h(NBadge, { value: state.approvals.length, offset: [14, 0] }, { default: () => 'Agent 接入' }), key: '/agent', icon: icon(HardwareChipOutline) },
-    { label: '仿真与人格', key: '/social', icon: icon(PeopleOutline) },
-    { label: '记忆', key: '/memory', icon: icon(BookOutline) },
     { label: '用量', key: '/usage', icon: icon(StatsChartOutline) },
   ] },
   { type: 'group', label: '系统', key: 'g3', children: [
@@ -83,6 +80,7 @@ async function logout() { await api('/api/logout', { method: 'POST' }); location
                 <div class="title">{{ route.meta.title }}</div>
                 <n-space align="center">
                   <span v-if="state.status?.self" class="self">{{ state.status.self.nickname }}（{{ state.status.self.userId }}）</span>
+                  <n-tag v-if="state.status?.restartNeeded" type="warning" size="small" round title="程序文件比正在运行的进程新。关掉 start.bat 窗口再打开，新版本才会生效。">需要重启</n-tag>
                   <StatusPill />
                   <n-tag v-if="state.status?.readOnly" type="warning" size="small" round>只读模式</n-tag>
                   <n-button quaternary circle size="small" :title="dark ? '切换到浅色' : '切换到深色'" :aria-label="dark ? '切换到浅色' : '切换到深色'" @click="dark = !dark"><template #icon><n-icon :component="dark ? SunnyOutline : MoonOutline" /></template></n-button>

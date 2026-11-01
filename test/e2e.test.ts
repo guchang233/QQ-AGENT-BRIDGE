@@ -451,6 +451,36 @@ describe('系统插件', () => {
     expect(change.isError).toBe(true);
   });
 
+  it('插件开关：反复切换记忆插件都能正常加载，依赖它的插件不受影响', async () => {
+    const host = bridge.pluginHost!;
+    const def = (host as any).defs.get('memory').def;
+    for (const on of [false, true, false, true]) {
+      await host.setEnabled('memory', on);
+      expect(host.plugins.get('memory')).toMatchObject({ enabled: on, loaded: on });
+      expect(host.plugins.get('social')?.loaded).toBe(true);
+    }
+    expect((host as any).defs.get('memory').def).toBe(def); // 系统插件不重新导入
+  });
+
+  it('用户插件改坏后保留上一版，不会从列表消失', async () => {
+    const host = bridge.pluginHost!;
+    const file = path.join((host as any).sources.find((s: any) => !s.system).dir, 'reload-test.ts');
+    fs.writeFileSync(file, "export default { name: 'reload-test', setup() {} };");
+    try {
+      await host.loadAll();
+      expect(host.plugins.get('reload-test')?.loaded).toBe(true);
+      fs.writeFileSync(file, 'export default {{{');
+      await host.reload('reload-test');
+      const st = host.plugins.get('reload-test');
+      expect(st?.loaded).toBe(true);
+      expect(st?.lastError).toContain('继续使用上一版');
+    } finally {
+      fs.rmSync(file, { force: true });
+      await host.loadAll();
+    }
+    expect(host.plugins.has('reload-test')).toBe(false);
+  });
+
   it('定时：安排并触发', async () => {
     mock.calls.length = 0;
     const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });

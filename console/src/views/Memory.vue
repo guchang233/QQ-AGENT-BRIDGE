@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import PageHint from '../components/PageHint.vue';
-import MemoryGraph from '../components/MemoryGraph.vue';
 import { h, onMounted, ref } from 'vue';
 import {
   NDataTable, NInput, NSpace, NButton, NPopconfirm, NText, NProgress, NTag, NCard, NGrid, NGi, NStatistic, NModal, NForm, NFormItem,
@@ -14,7 +13,6 @@ const ov = ref<any>(null);
 const scope = ref('');
 const q = ref('');
 const mode = ref<'list' | 'recall' | 'archived'>('list');
-const tab = ref<'list' | 'graph'>('graph');
 const unavailable = ref('');
 const showAdd = ref(false);
 const draft = ref({ content: '', scope: 'global', subject: '', kind: 'fact', tags: '', importance: 3, pinned: false });
@@ -61,10 +59,6 @@ onMounted(load);
   <div class="page">
     <n-alert v-if="unavailable" type="warning">{{ unavailable }}</n-alert>
     <div v-if="ov" class="ministats">
-      <n-radio-group v-model:value="tab" size="small">
-        <n-radio-button value="graph">关联网络</n-radio-button>
-        <n-radio-button value="list">列表</n-radio-button>
-      </n-radio-group>
       <span><b>{{ ov.total }}</b> 条记忆</span>
       <span><b>{{ ov.superseded }}</b> 已被替代</span>
       <span><b>{{ ov.fading }}</b> 即将遗忘</span>
@@ -73,8 +67,6 @@ onMounted(load);
       <span>遗忘曲线<b>{{ ov.forgetting ? '开启' : '关闭' }}</b></span>
       <span>语义检索<b>{{ ov.embedding || '未启用' }}</b></span>
     </div>
-    <MemoryGraph v-if="tab === 'graph' && !unavailable" />
-    <template v-else>
     <PageHint text="保持率越低越靠后，事件和待办过低时会被归档；事实和偏好不会自动归档。">
       保持率 R = (1 + 19/81 · t/S)^-0.5，S 是保持率降到 90% 的天数，每次被回忆都会增长。参数在「插件 → 记忆 → 配置」中调整。被新值替代的旧事实会显示删除线，保留历史但不再被取出。
     </PageHint>
@@ -92,8 +84,7 @@ onMounted(load);
       <n-button size="small" quaternary @click="act('rebuild', 'POST').then(() => msg.success('索引已重建'))">重建索引</n-button>
       <n-button size="small" type="primary" @click="showAdd = true">写入记忆</n-button>
     </div>
-    <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 215px)'" :scroll-x="820" />
-    </template>
+    <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 320px)'" :scroll-x="820" />
 
     <n-modal v-model:show="showAdd" preset="card" title="写入记忆" style="max-width: 520px">
       <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="70">

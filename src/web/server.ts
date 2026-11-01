@@ -104,10 +104,15 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     return { ok: true };
   });
 
+  /** 控制台是直接从磁盘读的，后端却要重启才更新：文件比进程新时提示重启，避免新页面配旧后端。 */
+  const filesNewerThanProcess = () => {
+    try { return fs.statSync(path.join(ROOT, 'console', 'dist', 'index.html')).mtimeMs > bridge.startedAt; } catch { return false; }
+  };
+
   // ------------------------------------------------------------------ 状态与配置
   app.get('/api/status', async () => {
     const day = Date.now() - 86400_000;
-    return { ...bridge.status(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp`, root: ROOT.split(path.sep).join('/') };
+    return { ...bridge.status(), restartNeeded: filesNewerThanProcess(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp`, root: ROOT.split(path.sep).join('/') };
   });
   app.post('/api/bot/start', async () => { await bridge.connect(); return bridge.status(); });
   app.post('/api/bot/stop', async () => { bridge.disconnect(); return bridge.status(); });
@@ -266,6 +271,8 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     else if (op === 'reload') await plugins.reload(name);
     else if (op === 'rescan') await plugins.loadAll();
     else return reply.code(400).send({ error: '未知操作' });
+    const failed = op === 'rescan' ? undefined : plugins.plugins.get(name)?.error;
+    if (failed) return reply.code(500).send({ error: failed });
     return { ok: true };
   });
   app.put('/api/plugins/:name/config', async (req) => {

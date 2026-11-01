@@ -63,6 +63,7 @@ export class PluginHost extends EventEmitter {
   plugins = new Map<string, PluginState>();
   external: ExternalDispatcher[] = [];
   services = new Map<string, unknown>();
+  private systemModules = new Map<string, any>();
   private sources: { dir: string; system: boolean }[];
   private watchers: fs.FSWatcher[] = [];
   private reloadTimers = new Map<string, NodeJS.Timeout>();
@@ -103,7 +104,10 @@ export class PluginHost extends EventEmitter {
         if (!entry) continue;
         const fallbackName = e.isDirectory() ? e.name : e.name.replace(/\.(ts|mts|mjs|js)$/, '');
         try {
-          const mod = await import(`${pathToFileURL(entry).href}?v=${Date.now()}`);
+          // 系统插件是程序的一部分，只导入一次。进程运行期间重新导入会让新的入口文件配上缓存里的旧依赖，导入失败
+          const cached = src.system ? this.systemModules.get(entry) : undefined;
+          const mod = cached ?? await import(`${pathToFileURL(entry).href}?v=${Date.now()}`);
+          if (src.system) this.systemModules.set(entry, mod);
           const def: PluginDefinition<any> = mod.default ?? mod;
           if (typeof def?.setup !== 'function') throw new Error('未导出 setup（请 export default definePlugin({...})）');
           const name = def.name ?? manifestFile?.name ?? fallbackName;
@@ -212,10 +216,13 @@ export class PluginHost extends EventEmitter {
     if (st.ops) return st.ops.reload();
     const affected = this.order([name, ...this.dependents(name)]);
     for (const n of [...affected].reverse()) { const s = this.plugins.get(n); if (s) await this.teardown(s); }
-    // 重新导入被修改的插件
+    // 重新导入被修改的插件。导入失败时保留上一版，插件不能因为一次改坏就从列表里消失
     const fresh = (await this.discover()).find((c) => c.name === name);
-    if (fresh) this.defs.set(name, fresh); else { this.defs.delete(name); this.plugins.delete(name); }
+    const failure = fresh ? undefined : this.plugins.get(name)?.error;
+    if (fresh) this.defs.set(name, fresh);
+    else if (!failure) { this.defs.delete(name); this.plugins.delete(name); }
     for (const n of affected) await this.loadOne(n);
+    if (failure) { const s = this.plugins.get(name); if (s) s.lastError = `${failure}（继续使用上一版）`; }
     this.emit('changed');
   }
 

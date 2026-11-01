@@ -372,7 +372,7 @@ watch(search, schedule);
 </template>
 
 <style scoped>
-.graph-page { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 150px); min-height: 420px; }
+.graph-page { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 205px); min-height: 420px; }
 .grow { flex: 1; }
 .stage { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 10px; }
 .canvas-box { position: relative; min-height: 0; overflow: hidden; border: 1px solid rgba(128,128,128,.2); border-radius: 8px; }

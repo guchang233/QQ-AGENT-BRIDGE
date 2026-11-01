@@ -49,7 +49,7 @@ onUnmounted(off);
         <n-text depth="3" style="font-size: 12px">{{ status?.detail }}</n-text>
       </n-space>
     </template>
-    <PageHint text="把 QQ 新消息推给 DSH，AI 通过 QQ 工具自主回复（配合「仿真与人格」使用）。">
+    <PageHint text="把 QQ 新消息推给 DSH，AI 通过 QQ 工具自主回复（配合「仿真与人格」插件使用）。">
       每个 QQ 会话对应一个 DSH 会话，只开放 QQ 工具，DSH 的命令行和文件工具全部屏蔽。profile：{{ setup.profile }}（{{ setup.profileDir }}）
     </PageHint>
     <div class="toolbar" style="margin-top: 6px">
@@ -83,7 +83,7 @@ onUnmounted(off);
       <div v-for="s in result.steps" :key="s">✓ {{ s }}</div>
       <div v-for="w in result.warnings" :key="w" style="color: #f0a020">! {{ w }}</div>
       <div v-if="result.restartRequired" style="margin-top: 6px"><b>请重启 DSH 使配置生效</b>，然后点「测试连接」确认。</div>
-      <div v-else-if="result.restartRequired === false" style="margin-top: 6px">DSH 已即时加载，无需重启。可以去「仿真与人格」页启用会话了。</div>
+      <div v-else-if="result.restartRequired === false" style="margin-top: 6px">DSH 已即时加载，无需重启。可以去「插件 → 仿真与人格」启用会话了。</div>
     </n-alert>
 
     <div class="sec">模型与连接</div>

@@ -1,51 +1,43 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import {
-  NCard, NSpace, NButton, NSwitch, NTag, NEmpty, NAlert, NModal, NForm, NFormItem, NInput, NInputNumber, NDynamicTags, NSelect, NText,
-  NRadioGroup, NRadioButton, NDivider, useMessage,
-} from 'naive-ui';
+import { useRouter } from 'vue-router';
+import { NButton, NIcon, NInput, NRadioButton, NRadioGroup, NSwitch, useMessage } from 'naive-ui';
 import { api, onPush } from '../api';
+import { CATEGORIES, colorOf, metaOf } from '../pluginRegistry';
 
 const msg = useMessage();
+const router = useRouter();
 const list = ref<any[]>([]);
 const tab = ref<'system' | 'user' | 'astrbot'>('system');
-const editing = ref<any>(null);
-const form = ref<Record<string, any>>({});
-const rawJson = ref('');
+const q = ref('');
+const busy = ref(new Set<string>());
 
 async function load() { list.value = await api('/api/plugins'); }
-async function op(name: string, o: string) {
-  try { await api(`/api/plugins/${name}/${o}`, { method: 'POST' }); msg.success('完成'); load(); } catch (e: any) { msg.error(e.message); }
+async function rescan() {
+  try { await api('/api/plugins/_/rescan', { method: 'POST' }); msg.success('扫描完成'); load(); } catch (e: any) { msg.error(e.message); }
 }
-function edit(p: any) {
-  editing.value = p;
-  form.value = JSON.parse(JSON.stringify(p.config ?? {}));
-  rawJson.value = JSON.stringify(p.config ?? {}, null, 2);
-}
-async function saveCfg() {
-  let cfg = form.value;
-  if (!editing.value.schema) { try { cfg = JSON.parse(rawJson.value); } catch { return msg.error('JSON 格式错误'); } }
-  for (const [k, s] of Object.entries<any>(editing.value.schema ?? {})) if (s.type === 'json' && typeof cfg[k] === 'string') { try { cfg[k] = JSON.parse(cfg[k]); } catch { return msg.error(`${k} 不是合法 JSON`); } }
-  try { await api(`/api/plugins/${editing.value.name}/config`, { method: 'PUT', body: cfg }); msg.success('已保存并重载'); editing.value = null; load(); } catch (e: any) { msg.error(e.message); }
-}
-/** 按 group 字段把配置项分组 */
-const groups = computed(() => {
-  const out = new Map<string, [string, any][]>();
-  for (const [k, s] of Object.entries<any>(editing.value?.schema ?? {})) {
-    const g = s.group ?? '';
-    out.set(g, [...(out.get(g) ?? []), [k, s]]);
+async function toggle(p: any, on: boolean) {
+  const before = p.enabled;
+  p.enabled = on; // 先反馈，失败再回退
+  busy.value = new Set(busy.value).add(p.name);
+  try { await api(`/api/plugins/${p.name}/${on ? 'enable' : 'disable'}`, { method: 'POST' }); }
+  catch (e: any) { p.enabled = before; msg.error(`${p.displayName}：${e.message}`); }
+  finally {
+    const next = new Set(busy.value); next.delete(p.name); busy.value = next;
+    load();
   }
-  return [...out];
-});
-const q = ref('');
-const open = ref(new Set<string>());
-const toggle = (n: string) => { open.value.has(n) ? open.value.delete(n) : open.value.add(n); open.value = new Set(open.value); };
+}
+const open = (p: any) => router.push(`/plugins/${p.name}`);
+
 const inTab = (p: any, t: string) => (t === 'astrbot' ? p.kind === 'astrbot' : p.kind !== 'astrbot' && (t === 'system') === p.system);
-// 已启用的排在前面，搜索同时匹配名称和说明
-const shown = computed(() => list.value
-  .filter((p) => inTab(p, tab.value) && (!q.value || `${p.displayName}${p.name}${p.description}`.toLowerCase().includes(q.value.toLowerCase())))
-  .sort((a, b) => Number(b.enabled) - Number(a.enabled)));
 const count = (t: string) => list.value.filter((p) => inTab(p, t)).length;
+// 按分类固定排列：开关之后卡片留在原位，不会跳走
+const groups = computed(() => {
+  const k = q.value.trim().toLowerCase();
+  const shown = list.value.filter((p) => inTab(p, tab.value) && (!k || `${p.displayName}${p.name}${p.description}`.toLowerCase().includes(k)));
+  return CATEGORIES.map((c) => ({ ...c, items: shown.filter((p) => metaOf(p.name).category === c.key) })).filter((g) => g.items.length);
+});
+
 const off = onPush((t) => { if (t === 'plugins') load(); });
 onMounted(load);
 onUnmounted(off);
@@ -61,76 +53,50 @@ onUnmounted(off);
       </n-radio-group>
       <n-input v-model:value="q" size="small" placeholder="搜索插件" clearable style="width: 180px" />
       <span class="grow" />
-      <n-button size="small" quaternary @click="op('_', 'rescan')">重新扫描</n-button>
+      <n-button size="small" quaternary @click="rescan">重新扫描</n-button>
     </div>
     <div v-if="tab === 'user'" class="hint">插件放在 <code>plugins/</code> 目录，保存即热重载。新建：<code>qab plugin new 名字</code>；开发指南见 <code>docs/plugins.md</code>。</div>
     <div v-if="tab === 'astrbot'" class="hint">AstrBot 插件放在 <code>astrbot_plugins/</code>，需在「设置 → 媒体与插件」开启兼容层并重启。</div>
+    <div v-if="!groups.length" class="empty hint">{{ q ? '没有找到匹配的插件' : '这里还没有插件' }}</div>
 
-    <n-card size="small" :content-style="{ padding: '2px 12px' }">
-      <div v-if="!shown.length" class="hint" style="padding: 8px 0">没有插件</div>
-      <div v-for="p in shown" :key="p.name" class="plugin">
-        <div class="row">
-          <n-switch size="small" :value="p.enabled" @update:value="(v: boolean) => op(p.name, v ? 'enable' : 'disable')" />
-          <div class="main" role="button" tabindex="0" @click="toggle(p.name)" @keydown.enter="toggle(p.name)">
-            <span class="name">{{ p.displayName }}</span>
-            <n-tag v-if="p.error" size="tiny" type="error" :bordered="false">异常</n-tag>
-            <span class="desc">{{ p.description }}</span>
+    <section v-for="g in groups" :key="g.key" class="group">
+      <h3>{{ g.label }}</h3>
+      <div class="cards">
+        <article v-for="p in g.items" :key="p.name" class="card" :class="{ off: !p.enabled, bad: p.error }" role="button" tabindex="0" @click="open(p)" @keydown.enter="open(p)">
+          <span class="tile" :style="{ '--c': colorOf(p.name) }"><n-icon :component="metaOf(p.name).icon" :size="20" /></span>
+          <div class="body">
+            <div class="name">{{ p.displayName }}</div>
+            <div class="desc">{{ p.error || p.description }}</div>
           </div>
-          <n-button size="tiny" quaternary :disabled="!p.enabled" @click="op(p.name, 'reload')">重载</n-button>
-          <n-button size="tiny" quaternary @click="edit(p)">配置</n-button>
-        </div>
-        <div v-if="open.has(p.name) || p.error || p.lastError" class="more">
-          <n-alert v-if="p.error" type="error" :show-icon="false">{{ p.error }}</n-alert>
-          <div v-if="p.lastError" style="color: #d03050">最近错误：{{ p.lastError }}</div>
-          <template v-if="open.has(p.name)">
-            <div class="meta">
-              <span>{{ p.name }} v{{ String(p.version ?? '').replace(/^v/, '') }} · {{ p.loaded ? '运行中' : '未启用' }}</span>
-              <span v-if="p.calls">触发 {{ p.calls }} 次</span>
-              <span v-if="p.crons">定时任务 {{ p.crons }}</span>
-              <span v-if="p.depends?.length">依赖：{{ p.depends.join('、') }}</span>
-            </div>
-            <div v-if="p.commands.length" class="meta">命令：<code v-for="c in p.commands" :key="c.names[0]" :title="c.desc">/{{ c.names[0] }}</code></div>
-            <div v-if="p.tools.length" class="meta">Agent 工具：<code v-for="t in p.tools" :key="t">{{ t }}</code></div>
-          </template>
-        </div>
+          <div class="side" @click.stop @keydown.enter.stop>
+            <n-switch size="small" :value="p.enabled" :loading="busy.has(p.name)" :aria-label="`${p.enabled ? '停用' : '启用'}${p.displayName}`" @update:value="(v: boolean) => toggle(p, v)" />
+            <n-button text size="tiny" class="cfg" @click="open(p)">配置</n-button>
+          </div>
+        </article>
       </div>
-    </n-card>
-
-    <n-modal :show="!!editing" preset="card" :title="`配置：${editing?.displayName}`" style="max-width: 620px" @update:show="(v: boolean) => !v && (editing = null)">
-      <n-form v-if="editing?.schema" label-placement="top" style="max-height: 65vh; overflow: auto; padding-right: 6px">
-        <template v-for="[g, fields] in groups" :key="g">
-          <n-divider v-if="g" title-placement="left" style="margin: 8px 0">{{ g }}</n-divider>
-          <n-form-item v-for="[k, s] in fields" :key="k" :label="s.description || k">
-            <n-switch v-if="s.type === 'bool'" v-model:value="form[k]" />
-            <n-input-number v-else-if="s.type === 'int' || s.type === 'float'" v-model:value="form[k]" :step="s.type === 'float' ? 0.05 : 1" :min="s.min" :max="s.max" style="width: 200px" />
-            <n-dynamic-tags v-else-if="s.type === 'list'" v-model:value="form[k]" />
-            <n-select v-else-if="s.type === 'select' || s.options" v-model:value="form[k]" :options="(s.options ?? []).map((o: any) => ({ label: String(o), value: o }))" />
-            <n-input v-else-if="s.type === 'secret'" v-model:value="form[k]" type="password" show-password-on="click" />
-            <n-input v-else-if="s.type === 'json'" :value="typeof form[k] === 'string' ? form[k] : JSON.stringify(form[k], null, 2)" type="textarea" style="font-family: monospace" @update:value="(v: string) => (form[k] = v)" />
-            <n-input v-else v-model:value="form[k]" :type="s.type === 'text' ? 'textarea' : 'text'" :autosize="s.type === 'text' ? { minRows: 2, maxRows: 8 } : undefined" />
-            <template v-if="s.hint" #feedback>{{ s.hint }}</template>
-          </n-form-item>
-        </template>
-      </n-form>
-      <template v-else>
-        <n-text depth="3" style="font-size: 12px">该插件没有声明配置项，直接编辑 JSON：</n-text>
-        <n-input v-model:value="rawJson" type="textarea" :autosize="{ minRows: 6, maxRows: 20 }" style="font-family: monospace" />
-      </template>
-      <template #footer><n-space justify="end"><n-button @click="editing = null">取消</n-button><n-button type="primary" @click="saveCfg">保存</n-button></n-space></template>
-    </n-modal>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.plugin { border-bottom: 1px solid rgba(128,128,128,.12); }
-.plugin:last-child { border-bottom: 0; }
-.row { display: flex; align-items: center; gap: 8px; min-height: 34px; }
-.main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
-.main:focus-visible { outline: 2px solid #12b7f5; }
-.name { flex: none; font-weight: 500; }
-.desc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; opacity: .6; }
-.more { padding: 0 0 8px 36px; font-size: 12px; }
-.meta { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 2px; opacity: .75; }
-.meta code { margin-right: 2px; }
-@media (max-width: 640px) { .main { flex-wrap: wrap; gap: 0 8px; } .desc { white-space: normal; } .more { padding-left: 0; } }
+.grow { flex: 1; }
+.empty { padding: 32px 0; text-align: center; }
+.group { margin-top: 6px; }
+.group h3 { margin: 0 0 8px 2px; font-size: 12px; font-weight: 500; opacity: .6; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.card { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px; border: 1px solid rgba(128,128,128,.16); border-radius: 10px; background: rgba(128,128,128,.04); cursor: pointer; transition: border-color .15s, background .15s; }
+.card:hover { border-color: rgba(18,183,245,.5); background: rgba(18,183,245,.06); }
+.card:focus-visible { outline: 2px solid #12b7f5; outline-offset: 2px; }
+.tile { flex: none; display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); transition: opacity .15s, filter .15s; }
+.card.off .tile { filter: grayscale(1); opacity: .55; }
+.body { flex: 1; min-width: 0; }
+.name { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+.card.off .name { opacity: .7; }
+.desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 1px; font-size: 12px; line-height: 1.45; opacity: .6; }
+.card.bad .desc { color: #d03050; opacity: 1; }
+.side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.cfg { opacity: .6; font-size: 12px; }
+.card:hover .cfg { opacity: 1; }
+@media (max-width: 640px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .card, .tile { transition: none; } }
 </style>
