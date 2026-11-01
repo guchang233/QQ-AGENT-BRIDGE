@@ -1,6 +1,6 @@
 {
   "name": "qq-agent-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "一体化 QQ ↔ Agent 桥接：MCP 工具、Web 控制台、插件系统（SnowLuma / OneBot v11）",
   "type": "module",
   "license": "MIT",
