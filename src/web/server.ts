@@ -392,6 +392,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   bridge.on('usage', (u) => push('usage', u));
   bridge.on('activity', (a) => push('activity', { ...a, convName: a.conv ? bridge.convName(a.conv) : '' }));
   bridge.on('driver', (d) => push('driver', d));
+  bridge.on('pulse', (p) => push('status', { pulse: p }));
   bridge.on('request', (r) => push('request', r));
   bridge.updater?.on('status', (st) => push('update', st));
   bridge.on('notice', (n) => push('notice', n));

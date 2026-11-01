@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { NGrid, NGi, NCard, NStatistic, NAlert, NButton, NSpace, NList, NListItem, NThing, NAvatar, NTag, NEmpty, NDescriptions, NDescriptionsItem, useMessage } from 'naive-ui';
+import { NGrid, NGi, NCard, NStatistic, NAlert, NButton, NSpace, NList, NListItem, NThing, NAvatar, NTag, NEmpty, NDescriptions, NDescriptionsItem, useMessage, useDialog } from 'naive-ui';
 import { api, state, onPush, avatarOf, fmtTime, fmtFull } from '../api';
 import ActivityList from '../components/ActivityList.vue';
 
@@ -18,10 +18,29 @@ async function load() {
   acts.value = await api('/api/activity?limit=12');
 }
 const busy = ref(false);
-async function toggleBot() {
+const dialog = useDialog();
+const pulse = computed(() => s.value.pulse ?? { state: 'offline', conv: '', convName: '' });
+const view = computed(() => {
+  const where = pulse.value.convName || pulse.value.conv;
+  switch (pulse.value.state) {
+    case 'sending': return { label: '消息发送中', sub: where ? `发给 ${where}` : '' };
+    case 'thinking': return { label: 'AI 处理中', sub: where ? `正在处理 ${where}` : '' };
+    case 'receiving': return { label: '消息接收中', sub: where ? `来自 ${where}` : '' };
+    case 'idle': return { label: '空闲', sub: s.value.self ? `${s.value.self.nickname}（${s.value.self.userId}）在线，等待消息` : '在线，等待消息' };
+    case 'connecting': return { label: '连接中', sub: s.value.lastError || `正在连接 ${s.value.endpoint?.ws ?? 'QQ 协议端'}` };
+    default: return { label: '离线中', sub: s.value.lastError ? `上次断开：${s.value.lastError}。点击启动` : '点击启动机器人' };
+  }
+});
+async function setBot(action: 'start' | 'stop') {
   busy.value = true;
-  try { state.status = await api(`/api/bot/${s.value.running ? 'stop' : 'start'}`, { method: 'POST' }); }
+  try { state.status = { ...state.status, ...(await api(`/api/bot/${action}`, { method: 'POST' })) }; }
   catch (e: any) { msg.error(e.message); } finally { busy.value = false; }
+}
+function askStart() {
+  dialog.warning({ title: '启动机器人？', content: '将连接 QQ 协议端，机器人开始收消息，并按仿真设置自动回复。', positiveText: '启动', negativeText: '取消', onPositiveClick: () => setBot('start') });
+}
+function askStop() {
+  dialog.warning({ title: '停止机器人？', content: '将断开 QQ 协议端，机器人不再收发消息。控制台可继续使用。', positiveText: '停止', negativeText: '取消', onPositiveClick: () => setBot('stop') });
 }
 async function reconnect() { try { await api('/api/reconnect', { method: 'POST' }); msg.success('已重新探测'); load(); } catch (e: any) { msg.error(e.message); } }
 async function handleReq(flag: string, approve: boolean) { await api(`/api/requests/${flag}`, { body: { approve } }); msg.success(approve ? '已同意' : '已拒绝'); load(); }
@@ -38,17 +57,16 @@ const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 864
 
 <template>
   <n-space vertical :size="16">
-    <n-alert v-if="!s.running" type="info" title="机器人未启动">
-      <div>未连接 QQ，不收消息、不唤醒 AI。{{ s.lastError ? `上次断开：${s.lastError}` : '' }}</div>
-      <n-button style="margin-top: 8px" type="primary" :loading="busy" @click="toggleBot">启动机器人</n-button>
-    </n-alert>
-    <n-alert v-else-if="s.connection === 'open'" type="success" title="机器人运行中">
-      <n-button size="small" :loading="busy" @click="toggleBot">停止机器人</n-button>
-    </n-alert>
-    <n-alert v-else type="error" title="未连接到 QQ 协议端">
-      <div>{{ s.lastError || '正在尝试连接…' }}（{{ s.endpoint?.ws }}）。请确认 SnowLuma 已启动并登录 QQ。</div>
-      <n-space style="margin-top: 8px"><n-button size="small" @click="reconnect">重新探测</n-button><n-button size="small" :loading="busy" @click="toggleBot">停止</n-button></n-space>
-    </n-alert>
+    <div class="bot-status" :class="[`is-${pulse.state}`, { clickable: pulse.state === 'offline' }]"
+      :role="pulse.state === 'offline' ? 'button' : 'status'" :tabindex="pulse.state === 'offline' ? 0 : undefined"
+      @click="pulse.state === 'offline' && askStart()" @keydown.enter="pulse.state === 'offline' && askStart()">
+      <span class="dot" />
+      <div class="text">
+        <div class="label">{{ view.label }}</div>
+        <div class="sub">{{ view.sub }}</div>
+      </div>
+      <n-button v-if="pulse.state !== 'offline'" size="small" quaternary :loading="busy" @click.stop="askStop">停止</n-button>
+    </div>
 
     <n-grid cols="2 s:4" responsive="screen" :x-gap="12" :y-gap="12">
       <n-gi><n-card size="small"><n-statistic label="24h 收到消息" :value="s.stats24h?.recv ?? 0" /></n-card></n-gi>
@@ -104,3 +122,23 @@ const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 864
     </n-grid>
   </n-space>
 </template>
+
+<style scoped>
+.bot-status { --c: #8a8f98; display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
+.bot-status.is-idle { --c: #18a058; }
+.bot-status.is-receiving { --c: #2080f0; }
+.bot-status.is-thinking { --c: #8a63d2; }
+.bot-status.is-sending { --c: #0e9f9f; }
+.bot-status.is-connecting { --c: #f0a020; }
+.bot-status.clickable { cursor: pointer; }
+.bot-status.clickable:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
+.bot-status.clickable:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+.dot { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+.is-receiving .dot, .is-thinking .dot, .is-sending .dot, .is-connecting .dot { animation: pulse 1.1s ease-in-out infinite; }
+.text { flex: 1; min-width: 0; }
+.label { font-size: 20px; font-weight: 600; line-height: 1.3; }
+.sub { font-size: 13px; opacity: .7; overflow-wrap: anywhere; }
+@keyframes pulse { 50% { opacity: .3; transform: scale(.75); } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+</style>

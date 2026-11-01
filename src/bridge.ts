@@ -78,8 +78,12 @@ export class Bridge extends EventEmitter {
     this.policy = new Policy(() => this.config);
     this.usage = new UsageLedger(this.store.db, () => this.prices());
     this.bot.on('event', (ev) => this.onEvent(ev).catch((e) => log.error('处理事件出错', e)));
+    this.on('message', (m: StoredMessage) => { if (!m.isSelf) { this.lastIncoming = { at: Date.now(), conv: m.conv }; this.refreshPulse(); } });
+    this.pulseTimer = setInterval(() => this.refreshPulse(), 1000);
+    this.pulseTimer.unref();
     this.bot.on('state', (s) => {
       this.emit('state', s);
+      this.refreshPulse();
       if (s === 'open') this.onConnected().catch((e) => log.warn('初始化信息拉取失败', e.message));
     });
   }
@@ -97,6 +101,14 @@ export class Bridge extends EventEmitter {
   async connect() {
     await this.rediscover();
     this.bot.start();
+    // 等连接有结果再返回：调用方（控制台）拿到的才是最终状态
+    if (this.bot.state === 'open') return;
+    await new Promise<void>((resolve) => {
+      const done = () => { clearTimeout(t); this.bot.off('state', on); resolve(); };
+      const on = (st: string) => { if (st !== 'connecting') done(); };
+      const t = setTimeout(done, 10_000);
+      this.bot.on('state', on);
+    });
   }
 
   /** 断开 QQ 协议端，机器人停止工作（控制台继续可用） */
@@ -106,6 +118,32 @@ export class Bridge extends EventEmitter {
   }
 
   get running() { return this.bot.running; }
+
+  // ---------------- 仪表盘状态：离线 / 连接中 / 发送中 / AI 处理中 / 接收中 / 空闲（优先级从高到低）
+  private sendingConvs = new Map<string, number>();
+  private lastIncoming = { at: 0, conv: '' };
+  private pulseTimer?: NodeJS.Timeout;
+  private lastPulseKey = '';
+
+  botPulse(now = Date.now()): { state: 'offline' | 'connecting' | 'sending' | 'thinking' | 'receiving' | 'idle'; conv: string; convName: string } {
+    const pick = (state: ReturnType<Bridge['botPulse']>['state'], conv = '') => ({ state, conv, convName: conv ? this.convName(conv) : '' });
+    if (!this.running) return pick('offline');
+    if (this.bot.state !== 'open') return pick('connecting');
+    const sending = [...this.sendingConvs.keys()];
+    if (sending.length) return pick('sending', sending[0]);
+    const thinking = [...this.drivers.values()].flatMap((d) => d.status().busy);
+    if (thinking.length) return pick('thinking', thinking[0]);
+    if (now - this.lastIncoming.at < 3000) return pick('receiving', this.lastIncoming.conv);
+    return pick('idle');
+  }
+
+  private refreshPulse() {
+    const p = this.botPulse();
+    const key = `${p.state}|${p.conv}`;
+    if (key === this.lastPulseKey) return;
+    this.lastPulseKey = key;
+    this.emit('pulse', p);
+  }
 
   async rediscover() {
     const ob = this.config.onebot;
@@ -137,9 +175,11 @@ export class Bridge extends EventEmitter {
   registerDriver(d: AgentDriver) {
     this.drivers.set(d.id, d);
     d.on('state', (s) => this.emit('driver', s));
+    for (const e of ['turn-start', 'turn-end']) d.on(e, () => setImmediate(() => this.refreshPulse()));
   }
 
   async stop() {
+    clearInterval(this.pulseTimer);
     for (const d of this.drivers.values()) await d.stop().catch(() => {});
     this.bot.stop();
     this.store.close();
@@ -357,6 +397,9 @@ export class Bridge extends EventEmitter {
     if (total > this.config.limits.maxMessageChars * parts.length) throw new Error(`消息过长（${total} 字），上限 ${this.config.limits.maxMessageChars} 字/条`);
     return this.invoke(caller, 'send', 'send', { conv, content, opts }, async () => {
       this.policy.checkSendRate(caller, conv, parts.length);
+      this.sendingConvs.set(conv, (this.sendingConvs.get(conv) ?? 0) + 1);
+      this.refreshPulse();
+      try {
       const ids: string[] = [];
       for (let i = 0; i < parts.length; i++) {
         if (i > 0) {
@@ -377,6 +420,11 @@ export class Bridge extends EventEmitter {
         for (const u of uploads) await this.uploadFile(c, u.file, u.name);
       }
       return { messageIds: ids, conv, parts: parts.length };
+      } finally {
+        const n = (this.sendingConvs.get(conv) ?? 1) - 1;
+        if (n > 0) this.sendingConvs.set(conv, n); else this.sendingConvs.delete(conv);
+        this.refreshPulse();
+      }
     }, `向 ${conv} 发送：${short(content, 120)}`);
   }
 
@@ -525,6 +573,7 @@ export class Bridge extends EventEmitter {
     return {
       connection: this.bot.state,
       running: this.bot.running,
+      pulse: this.botPulse(),
       lastError: this.bot.lastError,
       endpoint: { ws: this.bot.ep.wsUrl, http: this.bot.ep.httpUrl },
       self: this.self,

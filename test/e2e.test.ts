@@ -307,6 +307,12 @@ describe('系统插件', () => {
     bridge.config.owners = [];
   });
 
+  it('仪表盘状态：收到消息显示接收中，随后回到空闲', async () => {
+    mock.pushPrivateMessage(20001, [{ type: 'text', data: { text: '状态测试' } }]);
+    await waitFor(() => bridge.botPulse().state === 'receiving' && bridge.botPulse().conv === 'private:20001');
+    expect(bridge.botPulse(Date.now() + 5000).state).toBe('idle');
+  });
+
   it('定时：安排并触发', async () => {
     mock.calls.length = 0;
     const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });
