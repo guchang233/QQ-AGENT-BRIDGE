@@ -11,6 +11,7 @@ import { FaceTable } from './message/faces.ts';
 import { type ConvRef, type Segment, convKey, normalizeMessage, parseConv, plainText, text as textSeg } from './message/segments.ts';
 import { parseDsl } from './message/dsl.ts';
 import { renderSegments, fmtTime } from './message/render.ts';
+import { renderEnvelope, type SenderRole } from './message/envelope.ts';
 import { Policy, PolicyError, type Caller, CONSOLE_CALLER } from './policy.ts';
 import { UsageLedger, DEFAULT_PRICES, type PriceTable } from './usage/ledger.ts';
 import type { AgentDriver } from './drivers/types.ts';
@@ -325,19 +326,18 @@ export class Bridge extends EventEmitter {
     return this.nameOf(conv, ref.id) ?? '';
   }
 
-  /** 一行一条的可读格式：#消息ID [时间] 名字(QQ): 内容 */
   /** 是否管理员：只按 QQ 号判断。 */
   isOwner(qq: string | number) { return this.config.owners.map(String).includes(String(qq)); }
 
-  /**
-   * 一行一条的可读格式：[⟦管理员⟧]#消息ID [时间] 名字(QQ): 内容
-   * ⟦管理员⟧ 由系统按发送者 QQ 号添加；昵称与内容里的 ⟦⟧ 会被去掉、昵称里形如 (12345) 的伪装也会去掉，无法冒充。
-   */
-  formatLine(m: StoredMessage): string {
-    const name = String(m.senderName ?? '').replace(/[⟦⟧]/g, '').replace(/[(（]\s*\d{5,}\s*[)）]/g, '').trim() || m.senderId;
-    const who = m.isSelf ? `我(${m.senderId})` : `${name}(${m.senderId})`;
-    const mark = !m.isSelf && this.isOwner(m.senderId) ? '⟦管理员⟧' : '';
-    return `${mark}#${m.msgId} [${fmtTime(m.ts)}] ${who}${m.recalled ? '［已撤回］' : ''}: ${String(m.text).replace(/[⟦⟧]/g, '')}`;
+  /** 一条消息渲染成一行 JSON（见 message/envelope.ts）。所有读消息的工具都经过这里。 */
+  formatLine(m: StoredMessage, extra: { age?: string } = {}): string {
+    const role: SenderRole = m.isSelf ? 'self' : this.isOwner(m.senderId) ? 'admin' : 'member';
+    return renderEnvelope({
+      id: m.msgId, time: fmtTime(m.ts), qq: m.senderId, name: oneLine(m.senderName, 40) || m.senderId, role,
+      mentions: m.segments.filter((s) => s.type === 'at').map((s) => String(s.data.qq)),
+      replyTo: m.segments.find((s) => s.type === 'reply')?.data.id?.toString(),
+      recalled: m.recalled, age: extra.age, text: String(m.text),
+    });
   }
 
   formatLines(ms: StoredMessage[]): string {

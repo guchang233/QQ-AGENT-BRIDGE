@@ -1,4 +1,5 @@
-import { definePlugin, z, parseConv, convKey } from '../../sdk.ts';
+import { definePlugin, z, parseConv, convKey, oneLine } from '../../sdk.ts';
+import { quote } from '../../message/envelope.ts';
 
 interface AskRow {
   id: number; ts: number; conv: string; requester: string; requester_name: string; kind: string; content: string; reason: string;
@@ -61,7 +62,7 @@ export default definePlugin({
         }
       }
       const social = ctx.useOptional<any>('social');
-      const text = `${title()}${approve ? '同意' : '拒绝'}了 ${r.requester_name || r.requester}(${r.requester}) 的请求「${r.content}」${note ? `，${title()}说：${note}` : ''}${extra}。请自然地告诉对方结果（不用提"系统通知"这些字眼）。`;
+      const text = `${title()}${approve ? '同意' : '拒绝'}了 ${oneLine(r.requester_name, 40) || r.requester}(${r.requester}) 的请求 ${quote(r.content)}${note ? `，${title()}说：${quote(note)}` : ''}${extra}。请自然地告诉对方结果（不用提"系统通知"这些字眼）。`;
       social?.addNote?.(r.conv, text);
       bridge.activity({ kind: 'info', conv: r.conv, actor: by, title: `请示 #${id} 已${approve ? '同意' : '拒绝'}`, detail: `${r.content}${note ? `（${note}）` : ''}` });
       return `已${approve ? '同意' : '拒绝'}请示 #${id}${extra}，AI 会去告诉对方`;
@@ -73,7 +74,7 @@ export default definePlugin({
       description: '拿不准的事请示管理员：群友要你记住关于他的事（称呼、关系、身份、偏好等）、或要你做你不确定该不该做的事时使用。会私聊管理员，管理员答复后会唤醒你并在【系统通知】里告诉你结果。调用后跟对方说一声"我去问问"即可。日常闲聊、明显该拒绝的事不要请示。',
       input: {
         conv: z.string().describe('请求发生的会话'),
-        requester: z.union([z.string(), z.number()]).transform(String).describe('提出请求的人的 QQ'),
+        fromMsgId: z.union([z.string(), z.number()]).transform(String).describe('对方提出请求的那条消息的 id（系统据此核实是谁说的，不能用 QQ 号代替）'),
         kind: z.enum(['memory', 'other']).describe('memory：想让你记住某事 / other：想让你做某事'),
         content: z.string().min(2).max(300).describe('对方的请求，一句话概括（memory 时写成要记住的那句话）'),
         reason: z.string().max(200).default('').describe('你为什么拿不准'),
@@ -84,17 +85,20 @@ export default definePlugin({
         const conv = convKey(parseConv(a.conv));
         bridge.policy.assertConv(who, parseConv(conv));
         if (!owners().length) return { content: [{ type: 'text', text: `没有设置${title()}，无法请示。请自己判断。` }], isError: true };
-        if (owners().includes(a.requester)) return { content: [{ type: 'text', text: `${a.requester} 就是${title()}，直接按他说的做即可，不需要请示。` }], isError: true };
-        const mine = db.prepare("SELECT COUNT(*) n FROM ask_requests WHERE status = 'pending' AND requester = ?").get(a.requester) as any;
-        if (Number(mine.n) >= c.maxPendingPerUser) return { content: [{ type: 'text', text: `${a.requester} 已有 ${mine.n} 条请示在等${title()}答复，先别再请示了。` }], isError: true };
+        const msg = bridge.store.getMessage(a.fromMsgId, conv);
+        if (!msg || msg.isSelf) return { content: [{ type: 'text', text: `在会话 ${conv} 里找不到别人发的消息 ${a.fromMsgId}，无法请示。fromMsgId 要填对方那条消息的 id。` }], isError: true };
+        const requester = msg.senderId;
+        if (owners().includes(requester)) return { content: [{ type: 'text', text: `${requester} 就是${title()}，直接按他说的做即可，不需要请示。` }], isError: true };
+        const mine = db.prepare("SELECT COUNT(*) n FROM ask_requests WHERE status = 'pending' AND requester = ?").get(requester) as any;
+        if (Number(mine.n) >= c.maxPendingPerUser) return { content: [{ type: 'text', text: `${requester} 已有 ${mine.n} 条请示在等${title()}答复，先别再请示了。` }], isError: true };
         const recent = db.prepare('SELECT COUNT(*) n FROM ask_requests WHERE conv = ? AND ts > ?').get(conv, Date.now() - 3_600_000) as any;
         if (Number(recent.n) >= c.maxPerConvHour) return { content: [{ type: 'text', text: '这个会话本小时请示太多次了，这次请你自己判断。' }], isError: true };
-        const name = bridge.nameOf(conv, a.requester) ?? '';
+        const name = oneLine(msg.senderName, 40);
         const r = db.prepare('INSERT INTO ask_requests (ts, conv, requester, requester_name, kind, content, reason, memory) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-          .run(Date.now(), conv, a.requester, name, a.kind, a.content, a.reason, JSON.stringify({ subject: a.subject, importance: a.importance }));
+          .run(Date.now(), conv, requester, name, a.kind, a.content, a.reason, JSON.stringify({ subject: a.subject, importance: a.importance }));
         const id = Number(r.lastInsertRowid);
-        await notifyAdmins(`【请示 #${id}】${where(conv)} 的 ${name || a.requester}(${a.requester}) ${KIND[a.kind]}：「${a.content}」${a.reason ? `\n（我拿不准：${a.reason}）` : ''}\n回复「同意 ${id}」或「拒绝 ${id} 理由」`);
-        bridge.activity({ kind: 'info', conv, actor: 'AI', title: `请示${title()} #${id}`, detail: `${name || a.requester}：${a.content}` });
+        await notifyAdmins(`【请示 #${id}】${where(conv)} 的 ${name || requester}(${requester}) ${KIND[a.kind]}：「${a.content}」${a.reason ? `\n（我拿不准：${a.reason}）` : ''}\n回复「同意 ${id}」或「拒绝 ${id} 理由」`);
+        bridge.activity({ kind: 'info', conv, actor: 'AI', title: `请示${title()} #${id}`, detail: `${name || requester}：${a.content}` });
         return `已私聊请示${title()}（#${id}）。先跟对方说一声你去问问；${title()}答复后会唤醒你。`;
       },
     });
@@ -124,7 +128,7 @@ export default definePlugin({
       const cutoff = Date.now() - c.expireHours * 3_600_000;
       for (const r of db.prepare("SELECT * FROM ask_requests WHERE status = 'pending' AND ts < ?").all(cutoff) as unknown as AskRow[]) {
         db.prepare("UPDATE ask_requests SET status = 'expired' WHERE id = ?").run(r.id);
-        ctx.useOptional<any>('social')?.addNote?.(r.conv, `关于 ${r.requester_name || r.requester} 的请求「${r.content}」，${title()}一直没有答复，已过期。如果对方再提起，就说还没问到结果。`, false);
+        ctx.useOptional<any>('social')?.addNote?.(r.conv, `关于 ${oneLine(r.requester_name, 40) || r.requester} 的请求 ${quote(r.content)}，${title()}一直没有答复，已过期。如果对方再提起，就说还没问到结果。`, false);
       }
     }, 10 * 60_000);
 

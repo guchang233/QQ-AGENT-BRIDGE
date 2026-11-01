@@ -17,7 +17,7 @@ const BEGIN = '# === qq-agent-bridge MCP BEGIN ===';
 const END = '# === qq-agent-bridge MCP END ===';
 const DSH_TOKEN_NAME = 'dsh';
 /** stdio 代理的修订号；修改代理逻辑时递增 */
-const PROXY_REV = '3';
+const PROXY_REV = '4';
 
 /** DSH 仿真会话只需要聊天相关的工具（群管理/文件/底层动作等不提供，提示词更小、响应更快） */
 export const DSH_TOOLS = [
