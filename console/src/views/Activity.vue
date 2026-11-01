@@ -35,7 +35,7 @@ onUnmounted(off);
   <n-space vertical :size="12">
     <n-text depth="3" style="font-size: 13px">
       机器人的每一步都在这里：收到消息触发唤醒 → 送达 DSH → DSH 思考（调用了哪些工具、花了多少 Token）→ 发出了什么消息、发给了谁。
-      想看 DSH 的完整推理过程，可以在 DSH 里打开工作区「QQ-Agent Bridge」，每个 QQ 会话对应一个同名会话。
+      想看 DSH 的完整推理过程，可以在 DSH 里打开工作区「QQ 聊天」，每个 QQ 会话对应一个同名会话。
     </n-text>
     <n-space align="center">
       <n-select v-model:value="conv" clearable filterable placeholder="全部会话" :options="convOptions" style="width: 280px" size="small" @update:value="load" />

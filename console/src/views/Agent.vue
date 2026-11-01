@@ -5,7 +5,7 @@ import {
   NRadioGroup, NRadioButton, NForm, NFormItem, NDynamicTags, NEmpty, NText, NModal, useMessage, type DataTableColumns,
 } from 'naive-ui';
 import { h } from 'vue';
-import { api, state, refreshApprovals, TIER_LABEL, TIER_TYPE, fmtFull, fmtTime } from '../api';
+import { api, state, refreshApprovals, TIER_LABEL, TIER_TYPE, fmtFull, fmtTime, isNarrow } from '../api';
 import DshCard from '../components/DshCard.vue';
 import MigrateCard from '../components/MigrateCard.vue';
 
@@ -128,7 +128,7 @@ onMounted(load);
     </n-card>
 
     <n-card v-if="config" title="权限策略" size="small">
-      <n-form label-placement="left" label-width="80">
+      <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="80">
         <n-form-item v-for="(l, k) in TIER_LABEL" :key="k" :label="l">
           <n-radio-group v-model:value="config.agents.policy[k]" size="small">
             <n-radio-button value="allow">直接放行</n-radio-button>
@@ -144,7 +144,7 @@ onMounted(load);
     <n-card title="MCP 工具" size="small">
       <template #header-extra><n-input v-model:value="toolFilter" size="small" placeholder="筛选" clearable style="width: 180px" /></template>
       <n-text depth="3" style="font-size: 12px">关闭不需要的工具可以减少 Agent 的上下文占用；Agent 只会看到其 token 权限等级内的工具。插件注册的工具也会出现在这里。</n-text>
-      <n-data-table :columns="toolCols" :data="filteredTools" size="small" :max-height="460" :row-key="(r: any) => r.name" style="margin-top: 8px" />
+      <n-data-table :columns="toolCols" :data="filteredTools" size="small" :max-height="460" :scroll-x="640" :row-key="(r: any) => r.name" style="margin-top: 8px" />
     </n-card>
 
     <MigrateCard />

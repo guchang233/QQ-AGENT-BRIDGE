@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
-import { NCard, NForm, NFormItem, NInput, NInputNumber, NSwitch, NButton, NSpace, NDynamicTags, NRadioGroup, NRadio, NText, NAlert, NSpin, NProgress, NTag, useMessage } from 'naive-ui';
-import { api, onPush } from '../api';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { NCard, NForm, NFormItem, NInput, NInputNumber, NSwitch, NButton, NSpace, NDynamicTags, NRadioGroup, NRadio, NText, NAlert, NSpin, NProgress, NTag, useMessage, useThemeVars } from 'naive-ui';
+import { api, onPush, isNarrow } from '../api';
 
 const msg = useMessage();
+const theme = useThemeVars();
 const cfg = ref<any>(null);
 const accounts = ref<string[]>([]);
 const saving = ref(false);
 
-async function load() { const r = await api('/api/config'); cfg.value = r.config; accounts.value = r.snowlumaAccounts; }
+const saved = ref('');
+const dirty = computed(() => !!cfg.value && JSON.stringify(cfg.value) !== saved.value);
+async function load() { const r = await api('/api/config'); cfg.value = r.config; saved.value = JSON.stringify(r.config); accounts.value = r.snowlumaAccounts; }
 async function save() {
   saving.value = true;
   try { await api('/api/config', { method: 'PUT', body: cfg.value }); msg.success('已保存'); load(); }
@@ -68,7 +71,7 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
           </n-space>
           <pre v-if="showNotes" style="white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; margin: 0">{{ upd.notes }}</pre>
         </n-space>
-        <n-form v-if="cfg.update" label-placement="left" label-width="140" style="margin-top: 12px">
+        <n-form v-if="cfg.update" :label-placement="isNarrow ? 'top' : 'left'" label-width="140" style="margin-top: 12px">
           <n-form-item label="自动检查"><n-switch v-model:value="cfg.update.check" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">每 {{ cfg.update.checkIntervalHours }} 小时</n-text></n-form-item>
           <n-form-item label="自动安装"><n-switch v-model:value="cfg.update.autoInstall" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">发现新版本自动下载，由 start.bat 启动时随即重启完成更新</n-text></n-form-item>
           <n-form-item label="包含预发布版"><n-switch v-model:value="cfg.update.prerelease" /></n-form-item>
@@ -79,14 +82,14 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
       </n-card>
 
       <n-card title="机器人启动" size="small">
-        <n-form label-placement="left" label-width="140">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="140">
           <n-form-item label="启动时自动连接"><n-switch v-model:value="cfg.bot.autoConnect" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">关闭时只有在仪表盘点「启动机器人」才连接 QQ</n-text></n-form-item>
           <n-form-item label="断开后自动重连"><n-switch v-model:value="cfg.bot.autoReconnect" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">关闭时 SnowLuma 断开后机器人就停止</n-text></n-form-item>
         </n-form>
       </n-card>
 
       <n-card title="QQ 协议端（OneBot v11）" size="small">
-        <n-form label-placement="left" label-width="140">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="140">
           <n-form-item label="自动发现"><n-switch v-model:value="cfg.onebot.autoDiscover" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">从 SnowLuma 配置自动读取端口与 token，切换账号无需改配置</n-text></n-form-item>
           <n-form-item label="SnowLuma 目录"><n-input v-model:value="cfg.onebot.snowlumaHome" /></n-form-item>
           <n-form-item v-if="accounts.length" label="检测到账号"><n-text>{{ accounts.join('、') }}</n-text></n-form-item>
@@ -99,7 +102,7 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
       </n-card>
 
       <n-card title="会话范围" size="small">
-        <n-form label-placement="left" label-width="140">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="140">
           <n-form-item label="模式">
             <n-radio-group v-model:value="cfg.access.mode"><n-radio value="all">全部（黑名单除外）</n-radio><n-radio value="allowlist">仅白名单</n-radio></n-radio-group>
           </n-form-item>
@@ -114,7 +117,7 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
       </n-card>
 
       <n-card title="发送限制与节奏" size="small">
-        <n-form label-placement="left" label-width="160">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="160">
           <n-form-item label="全局每分钟上限"><n-input-number v-model:value="cfg.limits.sendPerMinute" :min="1" /></n-form-item>
           <n-form-item label="全局每小时上限"><n-input-number v-model:value="cfg.limits.sendPerHour" :min="1" /></n-form-item>
           <n-form-item label="单会话每分钟上限"><n-input-number v-model:value="cfg.limits.convPerMinute" :min="1" /></n-form-item>
@@ -127,7 +130,7 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
       </n-card>
 
       <n-card title="媒体" size="small">
-        <n-form label-placement="left" label-width="160">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="160">
           <n-form-item label="Agent 可读取的目录"><n-dynamic-tags v-model:value="cfg.media.uploadRoots" /></n-form-item>
           <n-form-item label="内联图片上限 (字节)"><n-input-number v-model:value="cfg.media.maxInlineImageBytes" :min="10240" :step="102400" /></n-form-item>
           <n-form-item label="下载上限 (字节)"><n-input-number v-model:value="cfg.media.maxDownloadBytes" :min="102400" :step="1048576" /></n-form-item>
@@ -136,7 +139,7 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
       </n-card>
 
       <n-card title="插件" size="small">
-        <n-form label-placement="left" label-width="160">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="160">
           <n-form-item label="命令前缀"><n-dynamic-tags v-model:value="cfg.plugins.commandPrefixes" /></n-form-item>
           <n-form-item label="AstrBot 兼容层"><n-switch v-model:value="cfg.plugins.astrbot.enabled" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">需重启生效</n-text></n-form-item>
           <n-form-item label="Python 路径"><n-input v-model:value="cfg.plugins.astrbot.python" /></n-form-item>
@@ -145,7 +148,7 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
       </n-card>
 
       <n-card title="控制台" size="small">
-        <n-form label-placement="left" label-width="140">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="140">
           <n-form-item label="监听地址"><n-input v-model:value="cfg.server.host" /></n-form-item>
           <n-form-item label="端口"><n-input-number v-model:value="cfg.server.port" :min="1" :max="65535" /></n-form-item>
           <n-form-item label="控制台密码"><n-input v-model:value="cfg.server.consolePassword" type="password" show-password-on="click" /></n-form-item>
@@ -153,7 +156,16 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
         <n-text depth="3" style="font-size: 12px">监听地址/端口修改后需重启。监听 0.0.0.0 将允许局域网访问，请设置强密码。</n-text>
       </n-card>
 
-      <n-space><n-button type="primary" :loading="saving" @click="save">保存全部设置</n-button><n-button @click="load">放弃修改</n-button></n-space>
     </n-space>
+    <div v-if="cfg" class="savebar" :style="{ background: theme.bodyColor }">
+      <n-text :depth="dirty ? 1 : 3" style="flex: 1; font-size: 13px">{{ dirty ? '有未保存的修改' : '所有修改已保存' }}</n-text>
+      <n-button :disabled="!dirty" @click="load">放弃修改</n-button>
+      <n-button type="primary" :disabled="!dirty" :loading="saving" @click="save">保存全部设置</n-button>
+    </div>
   </n-spin>
 </template>
+
+<style scoped>
+/* 设置页很长：保存按钮始终可见 */
+.savebar { position: sticky; bottom: 0; z-index: 2; max-width: 760px; margin-top: 16px; display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid rgba(128,128,128,.2); }
+</style>

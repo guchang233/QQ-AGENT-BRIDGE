@@ -1,3 +1,4 @@
+import { ref } from 'vue';
 import { reactive } from 'vue';
 
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
@@ -37,6 +38,10 @@ export const state = reactive({
   approvals: [] as any[],
   wsOpen: false,
 });
+
+/** 窄屏（手机）：表单标签放到上方、侧栏收窄 */
+export const isNarrow = ref(window.innerWidth < 640);
+window.addEventListener('resize', () => { isNarrow.value = window.innerWidth < 640; });
 
 type Listener = (type: string, data: any) => void;
 const listeners = new Set<Listener>();

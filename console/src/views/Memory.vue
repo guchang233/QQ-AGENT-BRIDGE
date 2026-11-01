@@ -4,7 +4,7 @@ import {
   NDataTable, NInput, NSpace, NButton, NPopconfirm, NText, NProgress, NTag, NCard, NGrid, NGi, NStatistic, NModal, NForm, NFormItem,
   NInputNumber, NSelect, NSwitch, NAlert, NRadioGroup, NRadioButton, useMessage, type DataTableColumns,
 } from 'naive-ui';
-import { api, fmtFull } from '../api';
+import { api, fmtFull, isNarrow } from '../api';
 
 const msg = useMessage();
 const rows = ref<any[]>([]);
@@ -77,10 +77,10 @@ onMounted(load);
       <n-button size="small" @click="act('sweep', 'POST')">立即整理</n-button>
       <n-button size="small" @click="act('rebuild', 'POST').then(() => msg.success('索引已重建'))">重建索引</n-button>
     </n-space>
-    <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 330px)'" />
+    <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 330px)'" :scroll-x="820" />
 
     <n-modal v-model:show="showAdd" preset="card" title="写入记忆" style="max-width: 520px">
-      <n-form label-placement="left" label-width="70">
+      <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="70">
         <n-form-item label="内容"><n-input v-model:value="draft.content" type="textarea" :autosize="{ minRows: 2 }" /></n-form-item>
         <n-form-item label="范围"><n-input v-model:value="draft.scope" placeholder="global / group:123 / private:456" /></n-form-item>
         <n-form-item label="相关人"><n-input v-model:value="draft.subject" placeholder="QQ 号（可空）" /></n-form-item>

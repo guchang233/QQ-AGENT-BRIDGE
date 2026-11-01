@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { NCard, NSpace, NButton, NTag, NAlert, NForm, NFormItem, NInput, NSelect, NSwitch, NText, NList, NListItem, NPopconfirm, useMessage } from 'naive-ui';
-import { api, onPush } from '../api';
+import { api, onPush, isNarrow } from '../api';
 
 const msg = useMessage();
 const info = ref<any>(null);
@@ -95,7 +95,7 @@ onUnmounted(off);
       <div v-else-if="result.restartRequired === false" style="margin-top: 6px">DSH 已即时加载，无需重启。可以去「仿真与人格」页启用会话了。</div>
     </n-alert>
 
-    <n-form label-placement="left" label-width="110" size="small" style="margin-top: 14px; max-width: 620px">
+    <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="110" size="small" style="margin-top: 14px; max-width: 620px">
       <n-form-item label="模型">
         <n-input v-model:value="form.model" placeholder="deepseek-flash" style="width: 200px" />
         <n-input v-model:value="form.provider" placeholder="provider" style="width: 180px; margin-left: 8px" />

@@ -9,7 +9,7 @@ import {
   SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HappyOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
   TerminalOutline, BookOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, PeopleOutline, StatsChartOutline, PulseOutline,
 } from '@vicons/ionicons5';
-import { state, checkSession, api } from './api';
+import { state, checkSession, api, isNarrow } from './api';
 import Login from './components/Login.vue';
 import ApprovalWatcher from './components/ApprovalWatcher.vue';
 
@@ -17,11 +17,17 @@ const os = useOsTheme();
 const dark = ref(localStorage.getItem('qab-theme') ? localStorage.getItem('qab-theme') === 'dark' : os.value === 'dark');
 watch(dark, (v) => localStorage.setItem('qab-theme', v ? 'dark' : 'light'));
 const theme = computed(() => (dark.value ? darkTheme : null));
+// 让浏览器自带的部分（滚动条、页面底色）跟随主题，切换和加载时不闪白
+watch(dark, (v) => { document.documentElement.style.colorScheme = v ? 'dark' : 'light'; document.body.style.background = v ? 'rgb(16, 16, 20)' : '#fff'; }, { immediate: true });
 const overrides: GlobalThemeOverrides = { common: { primaryColor: '#12b7f5', primaryColorHover: '#3cc6f7', primaryColorPressed: '#0b9fd6', primaryColorSuppl: '#12b7f5' } };
 
 const route = useRoute();
 const router = useRouter();
 const collapsed = ref(window.innerWidth < 900);
+let wasWide = window.innerWidth >= 900;
+window.addEventListener('resize', () => { const wide = window.innerWidth >= 900; if (wide !== wasWide) collapsed.value = !wide; wasWide = wide; });
+watch(() => route.meta.title, (t) => { document.title = t ? `${t} · QQ-Agent Bridge` : 'QQ-Agent Bridge'; }, { immediate: true });
+const siderMini = computed(() => (isNarrow.value ? 52 : 64));
 const icon = (c: any) => () => h(NIcon, null, { default: () => h(c) });
 const menu = computed<MenuOption[]>(() => [
   { label: '仪表盘', key: '/dashboard', icon: icon(SpeedometerOutline) },
@@ -60,9 +66,9 @@ async function logout() { await api('/api/logout', { method: 'POST' }); location
           <div v-if="!state.checked" class="center"><n-spin /></div>
           <Login v-else-if="!state.authed" />
           <n-layout v-else has-sider style="height: 100vh">
-            <n-layout-sider bordered collapse-mode="width" :collapsed-width="64" :width="200" :collapsed="collapsed" show-trigger @collapse="collapsed = true" @expand="collapsed = false">
+            <n-layout-sider bordered collapse-mode="width" :collapsed-width="siderMini" :width="200" :collapsed="collapsed" :native-scrollbar="false" :show-trigger="!isNarrow" @collapse="collapsed = true" @expand="collapsed = false">
               <div class="brand" @click="router.push('/dashboard')">🐧<span v-if="!collapsed"> QQ-Agent Bridge</span></div>
-              <n-menu :value="active" :options="menu" :collapsed="collapsed" :collapsed-width="64" @update:value="(k: string) => router.push(k)" />
+              <n-menu :value="active" :options="menu" :collapsed="collapsed" :collapsed-width="siderMini" @update:value="(k: string) => router.push(k)" />
             </n-layout-sider>
             <n-layout>
               <n-layout-header bordered class="header">
@@ -71,11 +77,11 @@ async function logout() { await api('/api/logout', { method: 'POST' }); location
                   <span v-if="state.status?.self" class="self">{{ state.status.self.nickname }}（{{ state.status.self.userId }}）</span>
                   <n-tag :type="connTag.type" size="small" round>{{ connTag.text }}</n-tag>
                   <n-tag v-if="state.status?.readOnly" type="warning" size="small" round>只读模式</n-tag>
-                  <n-button quaternary circle size="small" @click="dark = !dark"><template #icon><n-icon :component="dark ? SunnyOutline : MoonOutline" /></template></n-button>
-                  <n-button quaternary circle size="small" title="退出登录" @click="logout"><template #icon><n-icon :component="LogOutOutline" /></template></n-button>
+                  <n-button quaternary circle size="small" :title="dark ? '切换到浅色' : '切换到深色'" :aria-label="dark ? '切换到浅色' : '切换到深色'" @click="dark = !dark"><template #icon><n-icon :component="dark ? SunnyOutline : MoonOutline" /></template></n-button>
+                  <n-button quaternary circle size="small" title="退出登录" aria-label="退出登录" @click="logout"><template #icon><n-icon :component="LogOutOutline" /></template></n-button>
                 </n-space>
               </n-layout-header>
-              <n-layout-content class="content" :native-scrollbar="false" content-style="padding: 16px; height: 100%;">
+              <n-layout-content class="content" :native-scrollbar="false" :content-style="`padding: ${isNarrow ? 10 : 16}px; height: 100%;`">
                 <RouterView />
               </n-layout-content>
             </n-layout>
@@ -92,8 +98,16 @@ html, body, #app { margin: 0; height: 100%; font-family: -apple-system, 'PingFan
 .center { display: flex; height: 100vh; align-items: center; justify-content: center; }
 .brand { height: 52px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; cursor: pointer; white-space: nowrap; overflow: hidden; }
 .header { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
-.header .title { font-size: 16px; font-weight: 600; }
+.header .title { font-size: 16px; font-weight: 600; white-space: nowrap; }
 .header .self { font-size: 13px; opacity: .75; }
 .content { height: calc(100vh - 53px); }
-@media (max-width: 640px) { .header .self { display: none; } }
+code { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .header { padding: 0 10px; }
+  .header .self { display: none; }
+  /* 卡片标题和右侧操作放不下时换行，别把标题挤成竖条 */
+  .n-card.n-card > .n-card-header { flex-wrap: wrap; gap: 8px; }
+  .n-card.n-card > .n-card-header .n-card-header__main { flex: 1 1 100%; }
+  .n-card.n-card > .n-card-header .n-card-header__extra { margin-left: 0; }
+}
 </style>

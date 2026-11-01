@@ -113,11 +113,11 @@ onUnmounted(() => { off(); clearTimeout(t); });
           <n-radio-button value="conv">按会话</n-radio-button><n-radio-button value="model">按模型</n-radio-button><n-radio-button value="driver">按驱动</n-radio-button>
         </n-radio-group>
       </template>
-      <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.key" />
+      <n-data-table :columns="cols" :data="rows" size="small" :scroll-x="640" :row-key="(r: any) => r.key" />
     </n-card>
 
     <n-card size="small" title="最近回合">
-      <n-data-table :columns="turnCols" :data="turns" size="small" :max-height="360" :row-key="(r: any) => `${r.driver}${r.session}${r.turn}`" />
+      <n-data-table :columns="turnCols" :data="turns" size="small" :max-height="360" :scroll-x="760" :row-key="(r: any) => `${r.driver}${r.session}${r.turn}`" />
     </n-card>
 
     <n-modal v-model:show="showPrices" preset="card" title="价目设置（元 / 百万 token，空闲时段价）" style="max-width: 640px">

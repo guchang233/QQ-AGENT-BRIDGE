@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NGrid, NGi, NCard, NStatistic, NAlert, NButton, NSpace, NList, NListItem, NThing, NAvatar, NTag, NEmpty, NDescriptions, NDescriptionsItem, useMessage, useDialog } from 'naive-ui';
-import { api, state, onPush, avatarOf, fmtTime, fmtFull } from '../api';
+import { api, state, onPush, avatarOf, fmtTime, fmtFull, isNarrow } from '../api';
 import ActivityList from '../components/ActivityList.vue';
 
 const msg = useMessage();
@@ -98,7 +98,7 @@ const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 864
       <n-gi>
         <n-space vertical :size="12">
           <n-card title="运行状态" size="small">
-            <n-descriptions :column="1" label-placement="left" size="small">
+            <n-descriptions :column="1" :label-placement="isNarrow ? 'top' : 'left'" size="small">
               <n-descriptions-item label="账号">{{ s.self ? `${s.self.nickname}（${s.self.userId}）` : '—' }}</n-descriptions-item>
               <n-descriptions-item label="协议端">{{ s.endpoint?.ws }} · {{ s.endpoint?.http }}</n-descriptions-item>
               <n-descriptions-item label="最后事件">{{ s.lastEventAt ? fmtFull(s.lastEventAt) : '—' }}</n-descriptions-item>

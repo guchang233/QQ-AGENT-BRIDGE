@@ -20,8 +20,9 @@ async function bubbleAct(conv: string, act: 'surface' | 'dive') {
   try { await api(`/api/p/bubble/${act}/${encodeURIComponent(conv)}`, { body: {} }); msg.success(act === 'surface' ? '已冒泡' : '已潜水'); loadBubbles(); } catch (e: any) { msg.error(e.message); }
 }
 async function loadAsks() { try { asks.value = await api('/api/p/ask-admin/requests'); } catch { asks.value = []; } }
-async function decideAsk(id: number, approve: boolean) {
-  const note = approve ? '' : (window.prompt('拒绝理由（可空，会转告 AI）') ?? '');
+const rejecting = ref<{ id: number; note: string } | null>(null);
+async function decideAsk(id: number, approve: boolean, note = '') {
+  rejecting.value = null;
   try { const r = await api(`/api/p/ask-admin/requests/${id}`, { body: { approve, note } }); msg.success(r.message); loadAsks(); } catch (e: any) { msg.error(e.message); }
 }
 
@@ -48,15 +49,15 @@ const MODE: Record<string, [string, any]> = { active: ['活跃', 'success'], div
 const cols: DataTableColumns<any> = [
   { title: '启用', key: 'enabled', width: 64, render: (r) => h(NSwitch, { size: 'small', value: r.enabled, onUpdateValue: (v: boolean) => op(r.conv, v ? 'enable' : 'disable') }) },
   { title: '会话', key: 'conv', render: (r) => h('div', [h('div', r.name || r.conv), h('div', { style: 'font-size:12px;opacity:.55' }, r.conv)]) },
-  { title: '状态', key: 'mode', width: 170, render: (r) => h(NSpace, { size: 4 }, { default: () => [
+  { title: '状态', key: 'mode', width: 110, render: (r) => h(NSpace, { size: 4 }, { default: () => [
     h(NTag, { size: 'small', type: MODE[r.mode]?.[1] }, { default: () => MODE[r.mode]?.[0] ?? r.mode }),
     r.busy ? h(NTag, { size: 'small', type: 'warning' }, { default: () => '思考中' }) : null,
     r.pending ? h(NTag, { size: 'small', bordered: false }, { default: () => `待唤醒:${r.pending.reason}` }) : null,
   ] }) },
-  { title: '人格', key: 'role', width: 160, render: (r) => h(NSelect, { size: 'small', value: r.role, options: roles.value.map((x) => ({ label: x.name, value: x.name })), onUpdateValue: (v: string) => op(r.conv, 'role', { role: v }) }) },
+  { title: '人格', key: 'role', width: 130, render: (r) => h(NSelect, { size: 'small', value: r.role, options: roles.value.map((x) => ({ label: x.name, value: x.name })), onUpdateValue: (v: string) => op(r.conv, 'role', { role: v }) }) },
   { title: '唤醒', key: 'wakes', width: 140, render: (r) => h('div', { style: 'font-size:12px' }, [`${r.wakes} 次（近1小时 ${r.wakesHour ?? 0}）`, r.lastWakeAt ? ` · ${fmtTime(r.lastWakeAt)}` : '', r.lastReason ? h('div', { style: 'opacity:.6' }, r.lastReason) : null,
     r.limitedUntil ? h('div', { style: 'color:#d03050' }, `限流中，${fmtTime(r.limitedUntil)} 恢复`) : null]) },
-  { title: '', key: 'ops', width: 300, render: (r) => h(NSpace, { size: 4 }, { default: () => [
+  { title: '操作', key: 'ops', width: 350, render: (r) => h(NSpace, { size: 4, wrap: false, align: 'center' }, { default: () => [
     h(NButton, { size: 'tiny', disabled: !r.enabled, onClick: () => op(r.conv, 'wake') }, { default: () => '唤醒一次' }),
     h(NSelect, { size: 'tiny', style: 'width:84px', placeholder: '切换', value: null, options: [{ label: '活跃', value: 'active' }, { label: '潜水', value: 'diving' }, { label: '沉睡30分', value: 'sleeping' }], onUpdateValue: (v: string) => op(r.conv, 'mode', { mode: v, minutes: 30 }) }),
     h(NButton, { size: 'tiny', onClick: () => showPreview(r.conv) }, { default: () => '提示词预览' }),
@@ -94,13 +95,18 @@ onUnmounted(() => { off(); clearTimeout(t); });
       <div v-for="a in asks" :key="a.id" style="padding: 6px 0; border-bottom: 1px dashed rgba(128,128,128,.25)">
         <b>#{{ a.id }}</b> {{ a.conv }} · {{ a.requester_name || a.requester }}({{ a.requester }})：{{ a.content }}
         <div v-if="a.reason" style="font-size: 12px; opacity: .65">AI 拿不准的原因：{{ a.reason }}</div>
-        <n-space style="margin-top: 4px"><n-button size="tiny" type="primary" @click="decideAsk(a.id, true)">同意</n-button><n-button size="tiny" @click="decideAsk(a.id, false)">拒绝</n-button></n-space>
+        <n-space style="margin-top: 4px"><n-button size="tiny" type="primary" @click="decideAsk(a.id, true)">同意</n-button><n-button size="tiny" @click="rejecting = { id: a.id, note: '' }">拒绝</n-button></n-space>
       </div>
       <n-text depth="3" style="font-size: 12px">也可以直接在 QQ 私聊里回复机器人「同意 编号」或「拒绝 编号 理由」。</n-text>
     </n-card>
 
+    <n-modal :show="!!rejecting" preset="card" :title="`拒绝请示 #${rejecting?.id}`" style="max-width: 420px" @update:show="(v: boolean) => !v && (rejecting = null)">
+      <n-input v-if="rejecting" v-model:value="rejecting.note" type="textarea" placeholder="拒绝理由（可空，会转告 AI）" :autosize="{ minRows: 2, maxRows: 5 }" />
+      <template #footer><n-space justify="end"><n-button @click="rejecting = null">取消</n-button><n-button type="primary" @click="decideAsk(rejecting!.id, false, rejecting!.note)">确认拒绝</n-button></n-space></template>
+    </n-modal>
+
     <n-card title="会话" size="small">
-      <n-data-table :columns="cols" :data="convs" size="small" :row-key="(r: any) => r.conv" />
+      <n-data-table :columns="cols" :data="convs" size="small" :scroll-x="950" :row-key="(r: any) => r.conv" />
     </n-card>
 
     <n-card title="人格卡" size="small">

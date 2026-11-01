@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { NCard, NForm, NFormItem, NInput, NButton, NAlert, NSteps, NStep, NSpace, NRadioGroup, NRadio, NDynamicTags, NSpin, NText, useMessage } from 'naive-ui';
-import { api, state, checkSession } from '../api';
+import { api, state, checkSession, isNarrow } from '../api';
 
 const msg = useMessage();
 const password = ref('');
@@ -74,7 +74,7 @@ onMounted(() => { if (state.setupRequired) runDiscover(); });
             </ul>
           </n-alert>
         </n-spin>
-        <n-form label-placement="left" label-width="110" style="margin-top: 16px">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="110" style="margin-top: 16px">
           <n-form-item label="SnowLuma 目录"><n-input v-model:value="form.snowlumaHome" placeholder="例如 D:\AI\QQ\SnowLuma-v2.2.0-win-x64（自动读取端口和 token）" /></n-form-item>
           <n-form-item label="WS 地址"><n-input v-model:value="form.wsUrl" placeholder="留空自动发现，如 ws://127.0.0.1:3001" /></n-form-item>
           <n-form-item label="HTTP 地址"><n-input v-model:value="form.httpUrl" placeholder="留空自动发现，如 http://127.0.0.1:3000" /></n-form-item>

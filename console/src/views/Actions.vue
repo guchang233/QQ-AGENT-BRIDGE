@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { NInput, NSelect, NList, NListItem, NTag, NScrollbar, NCard, NButton, NSpace, NCode, NAlert, NForm, NFormItem, NText, NEmpty, useMessage } from 'naive-ui';
-import { api, TIER_LABEL, TIER_TYPE } from '../api';
+import { api, TIER_LABEL, TIER_TYPE, isNarrow } from '../api';
 
 const msg = useMessage();
 const actions = ref<any[]>([]);
@@ -61,7 +61,7 @@ async function run() {
         <template #header-extra><n-tag :type="TIER_TYPE[sel.tier]">{{ TIER_LABEL[sel.tier] }}</n-tag></template>
         <n-text depth="3">{{ sel.summary }} · 分类：{{ sel.category }}</n-text>
         <n-alert v-if="sel.tier === 'danger'" type="warning" style="margin: 8px 0" :show-icon="false">高危动作：请确认参数后再执行。</n-alert>
-        <n-form label-placement="left" label-width="140" style="margin-top: 12px">
+        <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="140" style="margin-top: 12px">
           <n-form-item v-for="p in sel.params" :key="p" :label="p"><n-input v-model:value="params[p]" placeholder="数字/true/false/JSON 自动识别，留空不传" /></n-form-item>
           <n-form-item label="附加参数 (JSON)"><n-input v-model:value="extra" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }" placeholder='{"key": "value"}' /></n-form-item>
         </n-form>

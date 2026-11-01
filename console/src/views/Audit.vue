@@ -46,7 +46,7 @@ function pretty(s: string) { try { return JSON.stringify(JSON.parse(s), null, 2)
       <n-button @click="load">刷新</n-button>
       <span style="font-size: 13px">实时</span><n-switch v-model:value="live" size="small" />
     </n-space>
-    <n-data-table :columns="cols" :data="shown" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 220px)'" virtual-scroll />
+    <n-data-table :columns="cols" :data="shown" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 220px)'" :scroll-x="760" virtual-scroll />
     <n-button size="small" @click="more">加载更早</n-button>
   </n-space>
 </template>
