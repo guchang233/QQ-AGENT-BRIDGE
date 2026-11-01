@@ -5,6 +5,7 @@ import {
   NCard, NSpace, NButton, NSwitch, NTag, NSelect, NDataTable, NAlert, NInput, NModal, NText, NCode, NPopconfirm, NEmpty, useMessage, type DataTableColumns,
 } from 'naive-ui';
 import { api, onPush, fmtTime } from '../api';
+import PageHint from '../components/PageHint.vue';
 
 const msg = useMessage();
 const router = useRouter();
@@ -72,58 +73,58 @@ onUnmounted(() => { off(); clearTimeout(t); });
 </script>
 
 <template>
-  <n-space vertical :size="14">
+  <div class="page">
     <n-alert v-if="err" type="warning">{{ err }}</n-alert>
-    <n-alert type="info" :show-icon="false" style="font-size: 13px">
-      仿真 = 让 Agent 像真人群友一样自主聊天。被 @、叫名字、提问、命中关键词时唤醒；它会自己决定说不说、说几句、接下来潜水还是沉睡。
+    <PageHint text="让 Agent 像真人群友一样自主聊天：被叫到时唤醒，自己决定说不说、接下来潜水还是沉睡。">
       需要先在「Agent 接入」页接入 DeepSeek Harness。唤醒参数（关键词、概率、主动发言等）在
       <a style="cursor: pointer; color: #12b7f5" @click="router.push('/plugins')">插件 → 仿真与人格 → 配置</a> 中调整。
       QQ 里管理员也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
-    </n-alert>
+    </PageHint>
+
+    <n-card v-if="asks.length" :title="`待处理的请示 ${asks.length}`" size="small" style="border-color: #f0a020">
+      <div v-for="a in asks" :key="a.id" class="ask">
+        <div class="min0">
+          <div><b>#{{ a.id }}</b> {{ a.requester_name || a.requester }}({{ a.requester }})：{{ a.content }} <span class="hint">{{ a.conv }}</span></div>
+          <div v-if="a.reason" class="hint">拿不准的原因：{{ a.reason }}</div>
+        </div>
+        <n-space :size="4" :wrap="false"><n-button size="tiny" @click="rejecting = { id: a.id, note: '' }">拒绝</n-button><n-button size="tiny" type="primary" @click="decideAsk(a.id, true)">同意</n-button></n-space>
+      </div>
+      <div class="hint" style="margin-top: 4px">也可以在 QQ 私聊里回复机器人「同意 编号」或「拒绝 编号 理由」。</div>
+    </n-card>
+
+    <n-card title="会话" size="small">
+      <n-data-table :columns="cols" :data="convs" size="small" :scroll-x="950" :row-key="(r: any) => r.conv" />
+    </n-card>
 
     <n-card v-if="bubbles.length" title="冒泡" size="small">
-      <div v-for="b in bubbles" :key="b.conv" style="display: flex; align-items: center; gap: 8px; padding: 3px 0">
-        <span style="flex: 1">{{ b.name || b.conv }}
-          <n-text depth="3" style="font-size: 12px">· {{ b.ai ? 'AI' : '预设语句' }} ·
-            {{ b.bubbling ? `冒泡中，${fmtTime(b.until)} 潜水` : `下次约 ${fmtTime(b.nextAt)}` }}</n-text></span>
-        <n-button size="tiny" v-if="!b.bubbling" @click="bubbleAct(b.conv, 'surface')">现在冒泡</n-button>
-        <n-button size="tiny" v-else @click="bubbleAct(b.conv, 'dive')">潜水</n-button>
+      <div v-for="b in bubbles" :key="b.conv" class="bubble">
+        <span class="min0">{{ b.name || b.conv }}</span>
+        <span class="hint">{{ b.ai ? 'AI' : '预设语句' }} · {{ b.bubbling ? `冒泡中，${fmtTime(b.until)} 潜水` : `下次约 ${fmtTime(b.nextAt)}` }}</span>
+        <n-button v-if="!b.bubbling" size="tiny" quaternary @click="bubbleAct(b.conv, 'surface')">现在冒泡</n-button>
+        <n-button v-else size="tiny" quaternary @click="bubbleAct(b.conv, 'dive')">潜水</n-button>
       </div>
     </n-card>
 
-    <n-card v-if="asks.length" title="待处理的请示" size="small" style="border-color: #f0a020">
-      <div v-for="a in asks" :key="a.id" style="padding: 6px 0; border-bottom: 1px dashed rgba(128,128,128,.25)">
-        <b>#{{ a.id }}</b> {{ a.conv }} · {{ a.requester_name || a.requester }}({{ a.requester }})：{{ a.content }}
-        <div v-if="a.reason" style="font-size: 12px; opacity: .65">AI 拿不准的原因：{{ a.reason }}</div>
-        <n-space style="margin-top: 4px"><n-button size="tiny" type="primary" @click="decideAsk(a.id, true)">同意</n-button><n-button size="tiny" @click="rejecting = { id: a.id, note: '' }">拒绝</n-button></n-space>
+    <n-card :title="`人格卡 ${roles.length}`" size="small">
+      <template #header-extra><n-button size="tiny" type="primary" @click="editing = { name: '', content: '# 角色卡：\n\n## 一、你是谁\n\n## 二、说话风格\n\n## 三、性格与反应\n\n## 四、梗与背景（可选）\n\n## 五、回复示例\n', isNew: true }">新建</n-button></template>
+      <p class="hint" style="margin: 0 0 6px">只写「你是谁、怎么说话」，不要写工具用法。格式与 qq-bridge 的 roles/*.md 兼容。</p>
+      <div v-if="!roles.length" class="hint">没有人格卡</div>
+      <div class="roles">
+        <div v-for="r in roles" :key="r.name" class="role">
+          <div class="min0">
+            <b class="line">{{ r.name }}</b>
+            <div class="hint line">{{ r.injectChars }} 字 · {{ fmtTime(r.mtime) }}</div>
+          </div>
+          <n-button size="tiny" quaternary @click="openRole(r.name)">编辑</n-button>
+          <n-popconfirm @positive-click="delRole(r.name)"><template #trigger><n-button size="tiny" quaternary type="error">删除</n-button></template>删除人格卡「{{ r.name }}」？</n-popconfirm>
+        </div>
       </div>
-      <n-text depth="3" style="font-size: 12px">也可以直接在 QQ 私聊里回复机器人「同意 编号」或「拒绝 编号 理由」。</n-text>
     </n-card>
 
     <n-modal :show="!!rejecting" preset="card" :title="`拒绝请示 #${rejecting?.id}`" style="max-width: 420px" @update:show="(v: boolean) => !v && (rejecting = null)">
       <n-input v-if="rejecting" v-model:value="rejecting.note" type="textarea" placeholder="拒绝理由（可空，会转告 AI）" :autosize="{ minRows: 2, maxRows: 5 }" />
       <template #footer><n-space justify="end"><n-button @click="rejecting = null">取消</n-button><n-button type="primary" @click="decideAsk(rejecting!.id, false, rejecting!.note)">确认拒绝</n-button></n-space></template>
     </n-modal>
-
-    <n-card title="会话" size="small">
-      <n-data-table :columns="cols" :data="convs" size="small" :scroll-x="950" :row-key="(r: any) => r.conv" />
-    </n-card>
-
-    <n-card title="人格卡" size="small">
-      <template #header-extra><n-button size="small" type="primary" @click="editing = { name: '', content: '# 角色卡：\n\n## 一、你是谁\n\n## 二、说话风格\n\n## 三、性格与反应\n\n## 四、梗与背景（可选）\n\n## 五、回复示例\n', isNew: true }">新建</n-button></template>
-      <n-text depth="3" style="font-size: 12px">人格卡只写「你是谁、怎么说话」，不要写工具用法。格式与 qq-bridge 的 roles/*.md 兼容（〔二代〕标签的章节会保留、〔一代〕的会去掉）。</n-text>
-      <n-empty v-if="!roles.length" description="没有人格卡" />
-      <n-space style="margin-top: 8px">
-        <n-card v-for="r in roles" :key="r.name" size="small" embedded style="width: 220px">
-          <b>{{ r.name }}</b>
-          <div style="font-size: 12px; opacity: .6">注入 {{ r.injectChars }} 字 · {{ fmtTime(r.mtime) }}</div>
-          <n-space style="margin-top: 6px" :size="4">
-            <n-button size="tiny" @click="openRole(r.name)">编辑</n-button>
-            <n-popconfirm @positive-click="delRole(r.name)"><template #trigger><n-button size="tiny" type="error" ghost>删除</n-button></template>删除人格卡「{{ r.name }}」？</n-popconfirm>
-          </n-space>
-        </n-card>
-      </n-space>
-    </n-card>
 
     <n-modal :show="!!editing" preset="card" :title="editing?.isNew ? '新建人格卡' : `编辑人格卡：${editing?.name}`" style="max-width: 760px" @update:show="(v: boolean) => !v && (editing = null)">
       <n-input v-if="editing?.isNew" v-model:value="editing!.name" placeholder="人格名（文件名）" style="margin-bottom: 8px" />
@@ -134,5 +135,13 @@ onUnmounted(() => { off(); clearTimeout(t); });
     <n-modal :show="!!preview" preset="card" title="唤醒提示词预览（发给 Agent 的内容）" style="max-width: 820px" @update:show="(v: boolean) => !v && (preview = '')">
       <n-code :code="preview" word-wrap style="max-height: 65vh; overflow: auto; font-size: 12px" />
     </n-modal>
-  </n-space>
+  </div>
 </template>
+
+<style scoped>
+.min0 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ask, .bubble { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.role { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border: 1px solid rgba(128,128,128,.18); border-radius: 6px; }
+.line { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+</style>

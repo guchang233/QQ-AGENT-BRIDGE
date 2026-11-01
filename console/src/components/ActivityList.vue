@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NTag, NEmpty } from 'naive-ui';
+import { NTag } from 'naive-ui';
 import { fmtTime, fmtFull } from '../api';
 import MessageContent from './MessageContent.vue';
 
@@ -14,8 +14,8 @@ const tok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
 </script>
 
 <template>
-  <n-empty v-if="!items.length" description="暂无动态：开启仿真并收到消息后，这里会实时显示每一步" />
-  <div v-for="a in items" :key="a.id" class="row" :class="a.level">
+  <div v-if="!items.length" class="empty">暂无动态。开启仿真并收到消息后，这里会实时显示每一步。</div>
+  <div v-for="a in items" :key="a.id" class="row" :class="[a.level, { compact }]">
     <span class="t" :title="fmtFull(a.ts)">{{ fmtTime(a.ts) }}</span>
     <n-tag size="tiny" :type="(KIND[a.kind] ?? ['', 'default'])[1]" :bordered="false" class="k">{{ (KIND[a.kind] ?? [a.kind])[0] }}</n-tag>
     <div class="body">
@@ -41,12 +41,16 @@ const tok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
 </template>
 
 <style scoped>
-.row { display: flex; gap: 8px; padding: 6px 2px; border-bottom: 1px dashed rgba(128,128,128,.18); align-items: flex-start; }
+.empty { font-size: 12px; opacity: .6; padding: 4px 0; }
+.row { display: flex; gap: 8px; padding: 5px 2px; border-bottom: 1px solid rgba(128,128,128,.12); align-items: flex-start; }
+.row:last-child { border-bottom: 0; }
+.row.compact { padding: 3px 2px; }
+.row.compact .title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row.error .title { color: #d03050; }
 .t { font-size: 12px; opacity: .55; width: 44px; flex-shrink: 0; padding-top: 2px; }
 .k { flex-shrink: 0; }
 .body { min-width: 0; flex: 1; }
-.title { font-size: 13px; }
+.title { font-size: 12.5px; }
 .conv { font-weight: 600; margin-right: 6px; }
 .actor { opacity: .55; font-size: 12px; margin-left: 4px; }
 .detail { font-size: 12px; opacity: .75; margin-top: 2px; word-break: break-all; }

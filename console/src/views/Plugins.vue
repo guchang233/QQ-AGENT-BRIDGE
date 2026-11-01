@@ -37,57 +37,63 @@ const groups = computed(() => {
   }
   return [...out];
 });
-const shown = computed(() => list.value.filter((p) => (tab.value === 'astrbot' ? p.kind === 'astrbot' : p.kind !== 'astrbot' && (tab.value === 'system') === p.system)));
-const count = (t: string) => list.value.filter((p) => (t === 'astrbot' ? p.kind === 'astrbot' : p.kind !== 'astrbot' && (t === 'system') === p.system)).length;
+const q = ref('');
+const open = ref(new Set<string>());
+const toggle = (n: string) => { open.value.has(n) ? open.value.delete(n) : open.value.add(n); open.value = new Set(open.value); };
+const inTab = (p: any, t: string) => (t === 'astrbot' ? p.kind === 'astrbot' : p.kind !== 'astrbot' && (t === 'system') === p.system);
+// 已启用的排在前面，搜索同时匹配名称和说明
+const shown = computed(() => list.value
+  .filter((p) => inTab(p, tab.value) && (!q.value || `${p.displayName}${p.name}${p.description}`.toLowerCase().includes(q.value.toLowerCase())))
+  .sort((a, b) => Number(b.enabled) - Number(a.enabled)));
+const count = (t: string) => list.value.filter((p) => inTab(p, t)).length;
 const off = onPush((t) => { if (t === 'plugins') load(); });
 onMounted(load);
 onUnmounted(off);
 </script>
 
 <template>
-  <n-space vertical :size="12">
-    <n-space justify="space-between" align="center">
+  <div class="page">
+    <div class="toolbar">
       <n-radio-group v-model:value="tab" size="small">
         <n-radio-button value="system">系统插件 {{ count('system') }}</n-radio-button>
         <n-radio-button value="user">我的插件 {{ count('user') }}</n-radio-button>
         <n-radio-button value="astrbot">AstrBot {{ count('astrbot') }}</n-radio-button>
       </n-radio-group>
-      <n-button size="small" @click="op('_', 'rescan')">重新扫描</n-button>
-    </n-space>
-    <n-alert v-if="tab === 'user'" type="info" :show-icon="false" style="font-size: 13px">
-      用户插件放在 <code>plugins/</code> 目录（单文件 <code>foo.ts</code> 或目录 <code>foo/index.ts</code>），保存即热重载。
-      新建：<code>qab plugin new 名字</code>；开发指南见 <code>docs/plugins.md</code>。
-    </n-alert>
-    <n-alert v-if="tab === 'astrbot'" type="info" :show-icon="false" style="font-size: 13px">
-      AstrBot 插件放在 <code>astrbot_plugins/</code>，需在「设置 → 插件」开启兼容层并重启。支持常用的 Star / filter / 消息组件 / llm_tool / 配置。
-    </n-alert>
-    <n-empty v-if="!shown.length" description="没有插件" />
-    <n-card v-for="p in shown" :key="p.name" size="small">
-      <template #header>
-        <n-space align="center" :size="6">
-          <span>{{ p.displayName }}</span>
-          <n-tag size="small" :bordered="false">{{ p.name }}</n-tag>
-          <n-tag v-if="p.version" size="small" :bordered="false">v{{ String(p.version).replace(/^v/, '') }}</n-tag>
-          <n-tag size="small" :type="p.loaded ? 'success' : p.error ? 'error' : 'default'">{{ p.loaded ? '运行中' : p.error ? '异常' : '未启用' }}</n-tag>
-        </n-space>
-      </template>
-      <template #header-extra>
-        <n-space align="center">
-          <n-switch :value="p.enabled" @update:value="(v: boolean) => op(p.name, v ? 'enable' : 'disable')" />
-          <n-button size="small" :disabled="!p.enabled" @click="op(p.name, 'reload')">重载</n-button>
-          <n-button size="small" @click="edit(p)">配置</n-button>
-        </n-space>
-      </template>
-      <div style="font-size: 13px; opacity: .8">{{ p.description }}</div>
-      <n-alert v-if="p.error" type="error" style="margin-top: 8px" :show-icon="false">{{ p.error }}</n-alert>
-      <div class="meta">
-        <span v-if="p.commands.length">命令：<code v-for="c in p.commands" :key="c.names[0]" :title="c.desc">/{{ c.names[0] }}</code></span>
-        <span v-if="p.tools.length">Agent 工具：<code v-for="t in p.tools" :key="t">{{ t }}</code></span>
-        <span v-if="p.depends?.length">依赖：{{ p.depends.join('、') }}</span>
-        <span v-if="p.crons">定时任务 {{ p.crons }}</span>
-        <span v-if="p.calls">触发 {{ p.calls }} 次</span>
+      <n-input v-model:value="q" size="small" placeholder="搜索插件" clearable style="width: 180px" />
+      <span class="grow" />
+      <n-button size="small" quaternary @click="op('_', 'rescan')">重新扫描</n-button>
+    </div>
+    <div v-if="tab === 'user'" class="hint">插件放在 <code>plugins/</code> 目录，保存即热重载。新建：<code>qab plugin new 名字</code>；开发指南见 <code>docs/plugins.md</code>。</div>
+    <div v-if="tab === 'astrbot'" class="hint">AstrBot 插件放在 <code>astrbot_plugins/</code>，需在「设置 → 媒体与插件」开启兼容层并重启。</div>
+
+    <n-card size="small" :content-style="{ padding: '2px 12px' }">
+      <div v-if="!shown.length" class="hint" style="padding: 8px 0">没有插件</div>
+      <div v-for="p in shown" :key="p.name" class="plugin">
+        <div class="row">
+          <n-switch size="small" :value="p.enabled" @update:value="(v: boolean) => op(p.name, v ? 'enable' : 'disable')" />
+          <div class="main" role="button" tabindex="0" @click="toggle(p.name)" @keydown.enter="toggle(p.name)">
+            <span class="name">{{ p.displayName }}</span>
+            <n-tag v-if="p.error" size="tiny" type="error" :bordered="false">异常</n-tag>
+            <span class="desc">{{ p.description }}</span>
+          </div>
+          <n-button size="tiny" quaternary :disabled="!p.enabled" @click="op(p.name, 'reload')">重载</n-button>
+          <n-button size="tiny" quaternary @click="edit(p)">配置</n-button>
+        </div>
+        <div v-if="open.has(p.name) || p.error || p.lastError" class="more">
+          <n-alert v-if="p.error" type="error" :show-icon="false">{{ p.error }}</n-alert>
+          <div v-if="p.lastError" style="color: #d03050">最近错误：{{ p.lastError }}</div>
+          <template v-if="open.has(p.name)">
+            <div class="meta">
+              <span>{{ p.name }} v{{ String(p.version ?? '').replace(/^v/, '') }} · {{ p.loaded ? '运行中' : '未启用' }}</span>
+              <span v-if="p.calls">触发 {{ p.calls }} 次</span>
+              <span v-if="p.crons">定时任务 {{ p.crons }}</span>
+              <span v-if="p.depends?.length">依赖：{{ p.depends.join('、') }}</span>
+            </div>
+            <div v-if="p.commands.length" class="meta">命令：<code v-for="c in p.commands" :key="c.names[0]" :title="c.desc">/{{ c.names[0] }}</code></div>
+            <div v-if="p.tools.length" class="meta">Agent 工具：<code v-for="t in p.tools" :key="t">{{ t }}</code></div>
+          </template>
+        </div>
       </div>
-      <div v-if="p.lastError" style="font-size: 12px; color: #d03050; margin-top: 4px">最近错误：{{ p.lastError }}</div>
     </n-card>
 
     <n-modal :show="!!editing" preset="card" :title="`配置：${editing?.displayName}`" style="max-width: 620px" @update:show="(v: boolean) => !v && (editing = null)">
@@ -112,10 +118,19 @@ onUnmounted(off);
       </template>
       <template #footer><n-space justify="end"><n-button @click="editing = null">取消</n-button><n-button type="primary" @click="saveCfg">保存</n-button></n-space></template>
     </n-modal>
-  </n-space>
+  </div>
 </template>
 
 <style scoped>
-.meta { margin-top: 8px; font-size: 12px; opacity: .75; display: flex; flex-wrap: wrap; gap: 4px 16px; }
-.meta code { margin-right: 6px; }
+.plugin { border-bottom: 1px solid rgba(128,128,128,.12); }
+.plugin:last-child { border-bottom: 0; }
+.row { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.main:focus-visible { outline: 2px solid #12b7f5; }
+.name { flex: none; font-weight: 500; }
+.desc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; opacity: .6; }
+.more { padding: 0 0 8px 36px; font-size: 12px; }
+.meta { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 2px; opacity: .75; }
+.meta code { margin-right: 2px; }
+@media (max-width: 640px) { .main { flex-wrap: wrap; gap: 0 8px; } .desc { white-space: normal; } .more { padding-left: 0; } }
 </style>

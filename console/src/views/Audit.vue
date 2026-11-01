@@ -39,14 +39,14 @@ function pretty(s: string) { try { return JSON.stringify(JSON.parse(s), null, 2)
 </script>
 
 <template>
-  <n-space vertical>
-    <n-space align="center">
-      <n-input v-model:value="q" placeholder="筛选调用方/工具/内容" clearable style="width: 260px" />
-      <n-select v-model:value="okFilter" style="width: 110px" :options="[{ label: '全部', value: 'all' }, { label: '成功', value: 'ok' }, { label: '失败', value: 'fail' }]" />
-      <n-button @click="load">刷新</n-button>
-      <span style="font-size: 13px">实时</span><n-switch v-model:value="live" size="small" />
-    </n-space>
-    <n-data-table :columns="cols" :data="shown" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 220px)'" :scroll-x="760" virtual-scroll />
-    <n-button size="small" @click="more">加载更早</n-button>
-  </n-space>
+  <div class="page">
+    <div class="toolbar">
+      <n-input v-model:value="q" size="small" placeholder="筛选调用方/工具/内容" clearable style="width: 240px" />
+      <n-select v-model:value="okFilter" size="small" style="width: 90px" :options="[{ label: '全部', value: 'all' }, { label: '成功', value: 'ok' }, { label: '失败', value: 'fail' }]" />
+      <n-button size="small" @click="load">刷新</n-button>
+      <span class="hint">实时</span><n-switch v-model:value="live" size="small" />
+    </div>
+    <n-data-table :columns="cols" :data="shown" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 190px)'" :scroll-x="760" virtual-scroll />
+    <n-button size="small" quaternary @click="more">加载更早</n-button>
+  </div>
 </template>

@@ -313,6 +313,12 @@ describe('系统插件', () => {
     expect(bridge.botPulse(Date.now() + 5000).state).toBe('idle');
   });
 
+  it('重复启动不会多开连接', async () => {
+    await bridge.connect();
+    await bridge.connect();
+    expect((mock as any).clients.size).toBe(1);
+  });
+
   it('定时：安排并触发', async () => {
     mock.calls.length = 0;
     const r = await client.callTool({ name: 'qq_schedule', arguments: { conv: 'group:111', message: '定时测试', delayMinutes: 0.001 } });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHint from '../components/PageHint.vue';
 import { h, onMounted, ref } from 'vue';
 import {
   NDataTable, NInput, NSpace, NButton, NPopconfirm, NText, NProgress, NTag, NCard, NGrid, NGi, NStatistic, NModal, NForm, NFormItem,
@@ -54,30 +55,33 @@ onMounted(load);
 </script>
 
 <template>
-  <n-space vertical :size="12">
+  <div class="page">
     <n-alert v-if="unavailable" type="warning">{{ unavailable }}</n-alert>
-    <n-grid v-if="ov" cols="2 s:5" responsive="screen" :x-gap="10" :y-gap="10">
-      <n-gi><n-card size="small"><n-statistic label="记忆总数" :value="ov.total" /></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="即将遗忘" :value="ov.fading" /></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="已归档" :value="ov.archived" /></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="遗忘曲线" :value="ov.forgetting ? '开启' : '关闭'" /></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="涉及人数" :value="ov.bySubject.length" /></n-card></n-gi>
-    </n-grid>
-    <n-text depth="3" style="font-size: 12px">保持率 R = e^(−Δt/S)：越久没被回忆越低；每次被回忆，稳定度 S 会增长（越接近遗忘时复习增长越多）。遗忘参数在「插件 → 记忆 → 配置」中调整。</n-text>
-    <n-space align="center">
+    <div v-if="ov" class="ministats">
+      <span><b>{{ ov.total }}</b> 条记忆</span>
+      <span><b>{{ ov.fading }}</b> 即将遗忘</span>
+      <span><b>{{ ov.archived }}</b> 已归档</span>
+      <span><b>{{ ov.bySubject.length }}</b> 涉及人数</span>
+      <span>遗忘曲线<b>{{ ov.forgetting ? '开启' : '关闭' }}</b></span>
+    </div>
+    <PageHint text="保持率越低越接近遗忘，被回忆时会回升。">
+      保持率 R = e^(−Δt/S)：越久没被回忆越低；每次被回忆，稳定度 S 会增长（越接近遗忘时复习增长越多）。遗忘参数在「插件 → 记忆 → 配置」中调整。
+    </PageHint>
+    <div class="toolbar">
       <n-radio-group v-model:value="mode" size="small" @update:value="load">
         <n-radio-button value="list">全部</n-radio-button>
         <n-radio-button value="recall">模拟回忆</n-radio-button>
         <n-radio-button value="archived">已归档</n-radio-button>
       </n-radio-group>
-      <n-input v-model:value="scope" size="small" placeholder="范围（group:123 / global）" clearable style="width: 190px" />
-      <n-input v-model:value="q" size="small" :placeholder="mode === 'recall' ? '回忆关键词（按综合得分排序）' : '关键词'" clearable style="width: 220px" @keyup.enter="load" />
+      <n-input v-model:value="scope" size="small" placeholder="范围（group:123 / global）" clearable style="width: 180px" />
+      <n-input v-model:value="q" size="small" :placeholder="mode === 'recall' ? '回忆关键词（按综合得分排序）' : '关键词'" clearable style="width: 200px" @keyup.enter="load" />
       <n-button size="small" @click="load">查询</n-button>
+      <span class="grow" />
+      <n-button size="small" quaternary @click="act('sweep', 'POST')">立即整理</n-button>
+      <n-button size="small" quaternary @click="act('rebuild', 'POST').then(() => msg.success('索引已重建'))">重建索引</n-button>
       <n-button size="small" type="primary" @click="showAdd = true">写入记忆</n-button>
-      <n-button size="small" @click="act('sweep', 'POST')">立即整理</n-button>
-      <n-button size="small" @click="act('rebuild', 'POST').then(() => msg.success('索引已重建'))">重建索引</n-button>
-    </n-space>
-    <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 330px)'" :scroll-x="820" />
+    </div>
+    <n-data-table :columns="cols" :data="rows" size="small" :row-key="(r: any) => r.id" :max-height="'calc(100vh - 215px)'" :scroll-x="820" />
 
     <n-modal v-model:show="showAdd" preset="card" title="写入记忆" style="max-width: 520px">
       <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="70">
@@ -91,5 +95,11 @@ onMounted(load);
       </n-form>
       <template #footer><n-space justify="end"><n-button @click="showAdd = false">取消</n-button><n-button type="primary" :disabled="!draft.content.trim()" @click="add">写入</n-button></n-space></template>
     </n-modal>
-  </n-space>
+  </div>
 </template>
+
+<style scoped>
+.ministats { display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 12px; }
+.ministats span { opacity: .75; }
+.ministats b { margin: 0 3px; font-size: 15px; font-weight: 600; }
+</style>

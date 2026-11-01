@@ -16,6 +16,8 @@ const config = ref<any>(null);
 const showNew = ref(false);
 const newTok = ref({ name: '', tiers: ['read', 'send'] as string[], groups: [] as string[], private: [] as string[] });
 const reveal = ref<Record<string, boolean>>({});
+const openCfg = ref<Record<string, boolean>>({});
+const loaded = ref(false);
 const toolFilter = ref('');
 
 const mcpUrl = computed(() => state.status?.mcpUrl ?? `${location.origin}/mcp`);
@@ -23,6 +25,7 @@ const root = computed(() => state.status?.root ?? '<qab 安装目录>');
 
 async function load() {
   [tokens.value, tools.value] = await Promise.all([api('/api/tokens'), api('/api/tools')]);
+  loaded.value = true;
   config.value = (await api('/api/config')).config;
   state.status = await api('/api/status');
   refreshApprovals();
@@ -67,104 +70,95 @@ onMounted(load);
 </script>
 
 <template>
-  <n-space vertical :size="16">
-    <n-card v-if="state.approvals.length" title="待审批" size="small" style="border-color: #f0a020">
+  <div class="page">
+    <n-card v-if="state.approvals.length" :title="`待审批 ${state.approvals.length}`" size="small" style="border-color: #f0a020">
       <div v-for="a in state.approvals" :key="a.id" class="appr">
-        <div><n-tag size="small" :type="TIER_TYPE[a.tier]">{{ TIER_LABEL[a.tier] }}</n-tag> <b>{{ a.caller }}</b> → <code>{{ a.tool }}</code> <span class="sub">{{ fmtTime(a.ts) }}</span></div>
-        <div class="sub2">{{ a.summary }}</div>
-        <n-space><n-button size="small" @click="decide(a.id, false)">拒绝</n-button><n-button size="small" type="primary" @click="decide(a.id, true)">批准</n-button></n-space>
+        <div class="min0">
+          <div><n-tag size="tiny" :type="TIER_TYPE[a.tier]" :bordered="false">{{ TIER_LABEL[a.tier] }}</n-tag> <b>{{ a.caller }}</b> → <code>{{ a.tool }}</code> <span class="hint">{{ fmtTime(a.ts) }}</span></div>
+          <div class="hint">{{ a.summary }}</div>
+        </div>
+        <n-space :size="4" :wrap="false"><n-button size="tiny" @click="decide(a.id, false)">拒绝</n-button><n-button size="tiny" type="primary" @click="decide(a.id, true)">批准</n-button></n-space>
       </div>
     </n-card>
 
-    <DshCard />
+    <n-tabs type="line" size="small" animated>
+      <n-tab-pane name="dsh" tab="DeepSeek Harness"><DshCard /></n-tab-pane>
 
-    <n-card title="接入方式（MCP：Claude Code / Cursor / Trae / WorkBuddy 等）" size="small">
-      <n-text depth="3">MCP 地址：</n-text><code>{{ mcpUrl }}</code>
-      <n-button size="tiny" quaternary @click="copy(mcpUrl)">复制</n-button>
-      <n-alert type="info" style="margin-top: 8px" :show-icon="false">
-        每个 token 代表一个 Agent 身份，可限制权限等级与可操作的会话。在下方 token 卡片中复制对应客户端的配置。
-        当前在线会话：{{ state.status?.mcpSessions?.map((s: any) => s.caller).join('、') || '无' }}
-      </n-alert>
-    </n-card>
+      <n-tab-pane name="mcp" tab="MCP 接入">
+        <div class="page">
+          <div class="toolbar">
+            <span class="hint">MCP 地址</span><code>{{ mcpUrl }}</code><n-button size="tiny" quaternary @click="copy(mcpUrl)">复制</n-button>
+            <span class="hint">在线：{{ state.status?.mcpSessions?.map((s: any) => s.caller).join('、') || '无' }}</span>
+            <span class="grow" />
+            <n-button size="small" type="primary" @click="showNew = true">新建 Token</n-button>
+          </div>
+          <n-card v-if="loaded && !tokens.length" size="small"><span class="hint">还没有 Token。Claude Code、Cursor 等客户端需要一个 Token 才能接入。</span></n-card>
+          <n-card v-for="t in tokens" :key="t.token" size="small">
+            <div class="toolbar">
+              <n-switch size="small" :value="t.enabled" @update:value="(v: boolean) => updateToken(t, { enabled: v })" />
+              <b>{{ t.name }}</b>
+              <code class="hint">{{ reveal[t.token] ? t.token : t.token.slice(0, 8) + '••••••••' }}</code>
+              <n-button size="tiny" quaternary @click="reveal[t.token] = !reveal[t.token]">{{ reveal[t.token] ? '隐藏' : '显示' }}</n-button>
+              <n-button size="tiny" quaternary @click="copy(t.token)">复制</n-button>
+              <span class="grow" />
+              <n-button size="tiny" quaternary @click="openCfg[t.token] = !openCfg[t.token]">{{ openCfg[t.token] ? '收起' : '接入配置' }}</n-button>
+              <n-popconfirm @positive-click="deleteToken(t)"><template #trigger><n-button size="tiny" quaternary type="error">删除</n-button></template>删除后使用该 token 的 Agent 将无法连接</n-popconfirm>
+            </div>
+            <div class="toolbar row2">
+              <span class="hint">权限</span>
+              <n-checkbox-group :value="t.tiers" @update:value="(v: any) => updateToken(t, { tiers: v })"><n-space :size="10"><n-checkbox v-for="(l, k) in TIER_LABEL" :key="k" size="small" :value="k" :label="l" /></n-space></n-checkbox-group>
+            </div>
+            <div class="toolbar row2">
+              <span class="hint">限定群</span><n-dynamic-tags size="small" :value="t.groups" @update:value="(v: any) => updateToken(t, { groups: v })" />
+              <span class="hint">限定私聊</span><n-dynamic-tags size="small" :value="t.private" @update:value="(v: any) => updateToken(t, { private: v })" />
+            </div>
+            <n-tabs v-if="openCfg[t.token]" type="line" size="small" style="margin-top: 6px">
+              <n-tab-pane name="claude" tab="Claude Code"><n-code :code="claudeHttp(t)" language="bash" word-wrap /><n-button size="tiny" style="margin-top: 4px" @click="copy(claudeHttp(t))">复制命令</n-button></n-tab-pane>
+              <n-tab-pane name="json" tab="JSON（Cursor / Cline 等）"><n-code :code="jsonCfg(t)" language="json" /><n-button size="tiny" style="margin-top: 4px" @click="copy(jsonCfg(t))">复制</n-button></n-tab-pane>
+              <n-tab-pane name="stdio" tab="stdio"><p class="hint" style="margin: 0 0 4px">仅支持 stdio 的客户端使用；会代理到本守护进程，未运行时独立启动。</p><n-code :code="stdioCfg(t)" language="json" /><n-button size="tiny" style="margin-top: 4px" @click="copy(stdioCfg(t))">复制</n-button></n-tab-pane>
+            </n-tabs>
+          </n-card>
+        </div>
+      </n-tab-pane>
 
-    <n-card title="Agent Token" size="small">
-      <template #header-extra><n-button size="small" type="primary" @click="showNew = true">新建 Token</n-button></template>
-      <n-empty v-if="!tokens.length" description="没有 token" />
-      <n-card v-for="t in tokens" :key="t.token" size="small" embedded style="margin-bottom: 10px">
-        <n-space align="center" justify="space-between">
-          <n-space align="center">
-            <b>{{ t.name }}</b>
-            <n-switch size="small" :value="t.enabled" @update:value="(v: boolean) => updateToken(t, { enabled: v })" />
-            <code style="font-size: 12px">{{ reveal[t.token] ? t.token : t.token.slice(0, 8) + '••••••••' }}</code>
-            <n-button size="tiny" quaternary @click="reveal[t.token] = !reveal[t.token]">{{ reveal[t.token] ? '隐藏' : '显示' }}</n-button>
-            <n-button size="tiny" quaternary @click="copy(t.token)">复制</n-button>
-          </n-space>
-          <n-popconfirm @positive-click="deleteToken(t)"><template #trigger><n-button size="tiny" type="error" ghost>删除</n-button></template>删除后使用该 token 的 Agent 将无法连接</n-popconfirm>
-        </n-space>
-        <n-space align="center" style="margin-top: 8px">
-          <span class="sub">权限：</span>
-          <n-checkbox-group :value="t.tiers" @update:value="(v: any) => updateToken(t, { tiers: v })">
-            <n-checkbox v-for="(l, k) in TIER_LABEL" :key="k" :value="k" :label="l" />
-          </n-checkbox-group>
-        </n-space>
-        <n-space align="center" style="margin-top: 6px">
-          <span class="sub">限定群：</span><n-dynamic-tags size="small" :value="t.groups" @update:value="(v: any) => updateToken(t, { groups: v })" />
-          <span class="sub">限定私聊：</span><n-dynamic-tags size="small" :value="t.private" @update:value="(v: any) => updateToken(t, { private: v })" />
-          <span class="sub">（都为空 = 不额外限制）</span>
-        </n-space>
-        <n-tabs type="line" size="small" style="margin-top: 6px">
-          <n-tab-pane name="claude" tab="Claude Code">
-            <n-code :code="claudeHttp(t)" language="bash" word-wrap /><n-button size="tiny" @click="copy(claudeHttp(t))">复制命令</n-button>
-          </n-tab-pane>
-          <n-tab-pane name="json" tab="JSON（Cursor / Cline 等）">
-            <n-code :code="jsonCfg(t)" language="json" /><n-button size="tiny" @click="copy(jsonCfg(t))">复制</n-button>
-          </n-tab-pane>
-          <n-tab-pane name="stdio" tab="stdio">
-            <n-text depth="3" style="font-size: 12px">仅支持 stdio 的客户端使用；会自动代理到本守护进程，守护进程未运行时独立启动。</n-text>
-            <n-code :code="stdioCfg(t)" language="json" /><n-button size="tiny" @click="copy(stdioCfg(t))">复制</n-button>
-          </n-tab-pane>
-        </n-tabs>
-      </n-card>
-    </n-card>
+      <n-tab-pane name="policy" tab="权限与工具">
+        <div class="page">
+          <n-card v-if="config" title="权限策略" size="small">
+            <template #header-extra><n-button type="primary" size="tiny" @click="savePolicy">保存策略</n-button></template>
+            <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="80">
+              <n-form-item v-for="(l, k) in TIER_LABEL" :key="k" :label="l">
+                <n-radio-group v-model:value="config.agents.policy[k]" size="small">
+                  <n-radio-button value="allow">直接放行</n-radio-button><n-radio-button value="approve">人工审批</n-radio-button><n-radio-button value="deny">禁止</n-radio-button>
+                </n-radio-group>
+              </n-form-item>
+              <n-form-item label="全局只读"><n-switch v-model:value="config.access.readOnly" /><span class="switch-hint">开启后 Agent 只能读取，发送和管理都会被拒绝</span></n-form-item>
+            </n-form>
+          </n-card>
+          <n-card :title="`MCP 工具 ${tools.length}`" size="small">
+            <template #header-extra><n-input v-model:value="toolFilter" size="small" placeholder="筛选" clearable style="width: 160px" /></template>
+            <p class="hint" style="margin: 0 0 6px">关闭用不到的工具，可以减少 Agent 的上下文占用。</p>
+            <n-data-table :columns="toolCols" :data="filteredTools" size="small" :max-height="'calc(100vh - 300px)'" :scroll-x="640" :row-key="(r: any) => r.name" />
+          </n-card>
+        </div>
+      </n-tab-pane>
 
-    <n-card v-if="config" title="权限策略" size="small">
-      <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="80">
-        <n-form-item v-for="(l, k) in TIER_LABEL" :key="k" :label="l">
-          <n-radio-group v-model:value="config.agents.policy[k]" size="small">
-            <n-radio-button value="allow">直接放行</n-radio-button>
-            <n-radio-button value="approve">人工审批</n-radio-button>
-            <n-radio-button value="deny">禁止</n-radio-button>
-          </n-radio-group>
-        </n-form-item>
-        <n-form-item label="全局只读"><n-switch v-model:value="config.access.readOnly" /><n-text depth="3" style="margin-left: 8px; font-size: 12px">开启后 Agent 只能读取，任何发送/管理都会被拒绝</n-text></n-form-item>
-      </n-form>
-      <n-button type="primary" size="small" @click="savePolicy">保存策略</n-button>
-    </n-card>
-
-    <n-card title="MCP 工具" size="small">
-      <template #header-extra><n-input v-model:value="toolFilter" size="small" placeholder="筛选" clearable style="width: 180px" /></template>
-      <n-text depth="3" style="font-size: 12px">关闭不需要的工具可以减少 Agent 的上下文占用；Agent 只会看到其 token 权限等级内的工具。插件注册的工具也会出现在这里。</n-text>
-      <n-data-table :columns="toolCols" :data="filteredTools" size="small" :max-height="460" :scroll-x="640" :row-key="(r: any) => r.name" style="margin-top: 8px" />
-    </n-card>
-
-    <MigrateCard />
+      <n-tab-pane name="migrate" tab="迁移"><MigrateCard /></n-tab-pane>
+    </n-tabs>
 
     <n-modal v-model:show="showNew" preset="card" title="新建 Agent Token" style="max-width: 480px">
       <n-form label-placement="top">
         <n-form-item label="名称（审计日志中显示）"><n-input v-model:value="newTok.name" placeholder="例如 claude-code" /></n-form-item>
-        <n-form-item label="权限等级">
-          <n-checkbox-group v-model:value="newTok.tiers"><n-checkbox v-for="(l, k) in TIER_LABEL" :key="k" :value="k" :label="l" /></n-checkbox-group>
-        </n-form-item>
+        <n-form-item label="权限等级"><n-checkbox-group v-model:value="newTok.tiers"><n-checkbox v-for="(l, k) in TIER_LABEL" :key="k" :value="k" :label="l" /></n-checkbox-group></n-form-item>
         <n-form-item label="限定群号（可空）"><n-dynamic-tags v-model:value="newTok.groups" /></n-form-item>
         <n-form-item label="限定私聊 QQ（可空）"><n-dynamic-tags v-model:value="newTok.private" /></n-form-item>
       </n-form>
       <template #footer><n-space justify="end"><n-button @click="showNew = false">取消</n-button><n-button type="primary" @click="createToken">创建</n-button></n-space></template>
     </n-modal>
-  </n-space>
+  </div>
 </template>
 
 <style scoped>
-.sub { font-size: 12px; opacity: .6; }
-.sub2 { font-size: 13px; margin: 4px 0 6px; opacity: .85; word-break: break-all; }
-.appr { padding: 8px 0; border-bottom: 1px dashed rgba(128,128,128,.25); }
+.min0 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.appr { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.row2 { margin-top: 6px; }
 </style>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue';
-import { NCard, NSpace, NButton, NTag, NAlert, NForm, NFormItem, NInput, NSelect, NSwitch, NText, NList, NListItem, NPopconfirm, useMessage } from 'naive-ui';
+import { NCard, NSpace, NButton, NTag, NAlert, NForm, NFormItem, NInput, NSelect, NSwitch, NText, NPopconfirm, useMessage } from 'naive-ui';
 import { api, onPush, isNarrow } from '../api';
+import PageHint from './PageHint.vue';
 
 const msg = useMessage();
 const info = ref<any>(null);
@@ -48,38 +49,28 @@ onUnmounted(off);
         <n-text depth="3" style="font-size: 12px">{{ status?.detail }}</n-text>
       </n-space>
     </template>
-    <n-text depth="3" style="font-size: 13px">
-      桥接把 QQ 新消息推给 DSH 的会话，DSH 的 AI 通过本项目的 MCP 工具自主回复（配合「仿真」页使用）。
-      每个 QQ 会话对应一个 DSH 会话，只开放 QQ 工具，DSH 的命令行/文件工具全部屏蔽。
-    </n-text>
-
-    <n-list style="margin-top: 8px" size="small">
-      <n-list-item>
-        <n-space align="center">DSH 地址 <code>{{ info.dsh.config.baseUrl }}</code>
-          <n-tag v-if="info.dsh.config.autoDiscover" size="tiny" :bordered="false">桌面版随机端口自动发现</n-tag></n-space>
-      </n-list-item>
-      <n-list-item>
-        <n-space align="center">接入状态：
-          <n-tag size="small" :type="setup.mcpRegistered ? 'success' : 'default'">MCP 服务{{ setup.mcpRegistered ? '已注册' : '未注册' }}</n-tag>
-          <n-tag size="small" :type="setup.bundleRegistered && setup.bundleLinked ? 'success' : 'default'">QQ 预设{{ setup.bundleRegistered && setup.bundleLinked ? '已安装' : '未安装' }}</n-tag>
-          <n-tag size="small" :type="setup.tokenReady ? 'success' : 'default'">会话令牌{{ setup.tokenReady ? '就绪' : '未创建' }}</n-tag>
-          <n-text depth="3" style="font-size: 12px">profile：{{ setup.profile }}（{{ setup.profileDir }}）</n-text>
-        </n-space>
-      </n-list-item>
-    </n-list>
+    <PageHint text="把 QQ 新消息推给 DSH，AI 通过 QQ 工具自主回复（配合「仿真与人格」使用）。">
+      每个 QQ 会话对应一个 DSH 会话，只开放 QQ 工具，DSH 的命令行和文件工具全部屏蔽。profile：{{ setup.profile }}（{{ setup.profileDir }}）
+    </PageHint>
+    <div class="toolbar" style="margin-top: 6px">
+      <n-tag size="small" :bordered="false" :type="setup.mcpRegistered ? 'success' : 'default'">MCP 服务{{ setup.mcpRegistered ? '已注册' : '未注册' }}</n-tag>
+      <n-tag size="small" :bordered="false" :type="setup.bundleRegistered && setup.bundleLinked ? 'success' : 'default'">QQ 预设{{ setup.bundleRegistered && setup.bundleLinked ? '已安装' : '未安装' }}</n-tag>
+      <n-tag size="small" :bordered="false" :type="setup.tokenReady ? 'success' : 'default'">会话令牌{{ setup.tokenReady ? '就绪' : '未创建' }}</n-tag>
+      <span class="hint">地址 <code>{{ info.dsh.config.baseUrl }}</code></span>
+    </div>
 
     <n-alert v-if="setup.qqBridgeDetected" type="info" :show-icon="false" style="margin-top: 8px; font-size: 13px">
       检测到 qq-bridge 的 DSH 配置。一键接入只会添加本项目自己的区块（MCP「qq」、预设「qab-qq」），不会改动 qq-bridge 的任何条目，两者可以共存。
     </n-alert>
 
-    <n-space style="margin-top: 10px">
+    <n-space style="margin-top: 8px" :size="6">
       <n-popconfirm @positive-click="install">
-        <template #trigger><n-button type="primary" :loading="busy === 'install'">{{ setup.mcpRegistered ? '重新接入（更新预设）' : '一键接入 DSH' }}</n-button></template>
+        <template #trigger><n-button size="small" type="primary" :loading="busy === 'install'">{{ setup.mcpRegistered ? '重新接入（更新预设）' : '一键接入 DSH' }}</n-button></template>
         将在 {{ setup.profileDir }} 的 cordis.patch.yml 中注册 MCP（会先备份），并通过 DSH 自己的插件管理器安装预设 bundle。继续？
       </n-popconfirm>
-      <n-button :loading="busy === 'test'" @click="doTest">测试连接</n-button>
+      <n-button size="small" :loading="busy === 'test'" @click="doTest">测试连接</n-button>
       <n-popconfirm v-if="setup.mcpRegistered || setup.bundleRegistered" @positive-click="uninstall">
-        <template #trigger><n-button type="error" ghost :loading="busy === 'uninstall'">移除接入</n-button></template>
+        <template #trigger><n-button size="small" quaternary type="error" :loading="busy === 'uninstall'">移除接入</n-button></template>
         从 DSH 中移除本项目的 MCP 与预设（不影响 qq-bridge）。继续？
       </n-popconfirm>
     </n-space>
@@ -95,24 +86,21 @@ onUnmounted(off);
       <div v-else-if="result.restartRequired === false" style="margin-top: 6px">DSH 已即时加载，无需重启。可以去「仿真与人格」页启用会话了。</div>
     </n-alert>
 
-    <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="110" size="small" style="margin-top: 14px; max-width: 620px">
-      <n-form-item label="模型">
-        <n-input v-model:value="form.model" placeholder="deepseek-flash" style="width: 200px" />
-        <n-input v-model:value="form.provider" placeholder="provider" style="width: 180px; margin-left: 8px" />
-      </n-form-item>
-      <n-form-item label="思考强度">
-        <n-select v-model:value="form.reasoningEffort" :options="['off', 'low', 'high', 'max'].map((v) => ({ label: v, value: v }))" style="width: 140px" />
-      </n-form-item>
-      <n-form-item label="预设"><n-input v-model:value="form.preset" style="width: 200px" /></n-form-item>
-      <n-form-item label="工具审批">
-        <n-select v-model:value="form.approvals" :options="[{ label: '一律拒绝（推荐）', value: 'reject' }, { label: '交给控制台审批', value: 'console' }]" style="width: 200px" />
-      </n-form-item>
-      <n-form-item label="地址">
-        <n-input v-model:value="form.baseUrl" style="width: 260px" />
-        <n-switch v-model:value="form.autoDiscover" style="margin-left: 10px" /><n-text depth="3" style="margin-left: 6px; font-size: 12px">自动发现本机端口</n-text>
-      </n-form-item>
+    <div class="sec">模型与连接</div>
+    <n-form class="form-2" :label-placement="isNarrow ? 'top' : 'left'" label-width="72" size="small">
+      <n-form-item label="模型"><n-input v-model:value="form.model" placeholder="deepseek-flash" /></n-form-item>
+      <n-form-item label="Provider"><n-input v-model:value="form.provider" placeholder="provider" /></n-form-item>
+      <n-form-item label="思考强度"><n-select v-model:value="form.reasoningEffort" :options="['off', 'low', 'high', 'max'].map((v) => ({ label: v, value: v }))" /></n-form-item>
+      <n-form-item label="预设"><n-input v-model:value="form.preset" /></n-form-item>
+      <n-form-item label="工具审批"><n-select v-model:value="form.approvals" :options="[{ label: '一律拒绝（推荐）', value: 'reject' }, { label: '交给控制台审批', value: 'console' }]" /></n-form-item>
+      <n-form-item label="地址"><n-input v-model:value="form.baseUrl" /></n-form-item>
+      <n-form-item label="自动发现"><n-switch v-model:value="form.autoDiscover" /><span class="switch-hint">自动找本机 DSH 端口</span></n-form-item>
       <n-form-item label="启用驱动"><n-switch v-model:value="form.enabled" /></n-form-item>
-      <n-button size="small" type="primary" @click="save">保存</n-button>
     </n-form>
+    <n-button size="small" type="primary" @click="save">保存</n-button>
   </n-card>
 </template>
+
+<style scoped>
+.sec { margin: 12px 0 6px; font-size: 13px; font-weight: 600; }
+</style>

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { NGrid, NGi, NCard, NStatistic, NAlert, NButton, NSpace, NList, NListItem, NThing, NAvatar, NTag, NEmpty, NDescriptions, NDescriptionsItem, useMessage, useDialog } from 'naive-ui';
-import { api, state, onPush, avatarOf, fmtTime, fmtFull, isNarrow } from '../api';
+import { NCard, NButton, NSpace, NAvatar, NTag, useMessage } from 'naive-ui';
+import { api, state, onPush, avatarOf, fmtTime, fmtFull } from '../api';
+import { useBot } from '../bot';
 import ActivityList from '../components/ActivityList.vue';
 
 const msg = useMessage();
 const router = useRouter();
+const { pulse, view, busy, askStart, askStop } = useBot();
 const convs = ref<any[]>([]);
 const requests = ref<any[]>([]);
 const acts = ref<any[]>([]);
@@ -15,130 +17,119 @@ const s = computed(() => state.status ?? {});
 async function load() {
   const [st, c, r] = await Promise.all([api('/api/status'), api('/api/conversations'), api('/api/requests')]);
   state.status = st; convs.value = c.filter((x: any) => x.unread > 0).slice(0, 8); requests.value = r;
-  acts.value = await api('/api/activity?limit=12');
-}
-const busy = ref(false);
-const dialog = useDialog();
-const pulse = computed(() => s.value.pulse ?? { state: 'offline', conv: '', convName: '' });
-const view = computed(() => {
-  const where = pulse.value.convName || pulse.value.conv;
-  switch (pulse.value.state) {
-    case 'sending': return { label: '消息发送中', sub: where ? `发给 ${where}` : '' };
-    case 'thinking': return { label: 'AI 处理中', sub: where ? `正在处理 ${where}` : '' };
-    case 'receiving': return { label: '消息接收中', sub: where ? `来自 ${where}` : '' };
-    case 'idle': return { label: '空闲', sub: s.value.self ? `${s.value.self.nickname}（${s.value.self.userId}）在线，等待消息` : '在线，等待消息' };
-    case 'connecting': return { label: '连接中', sub: s.value.lastError || `正在连接 ${s.value.endpoint?.ws ?? 'QQ 协议端'}` };
-    default: return { label: '离线中', sub: s.value.lastError ? `上次断开：${s.value.lastError}。点击启动` : '点击启动机器人' };
-  }
-});
-async function setBot(action: 'start' | 'stop') {
-  busy.value = true;
-  try { state.status = { ...state.status, ...(await api(`/api/bot/${action}`, { method: 'POST' })) }; }
-  catch (e: any) { msg.error(e.message); } finally { busy.value = false; }
-}
-function askStart() {
-  dialog.warning({ title: '启动机器人？', content: '将连接 QQ 协议端，机器人开始收消息，并按仿真设置自动回复。', positiveText: '启动', negativeText: '取消', onPositiveClick: () => setBot('start') });
-}
-function askStop() {
-  dialog.warning({ title: '停止机器人？', content: '将断开 QQ 协议端，机器人不再收发消息。控制台可继续使用。', positiveText: '停止', negativeText: '取消', onPositiveClick: () => setBot('stop') });
+  acts.value = await api('/api/activity?limit=30');
 }
 async function reconnect() { try { await api('/api/reconnect', { method: 'POST' }); msg.success('已重新探测'); load(); } catch (e: any) { msg.error(e.message); } }
+async function refreshContacts() { await api('/api/contacts/refresh', { method: 'POST' }); msg.success('已刷新'); load(); }
 async function handleReq(flag: string, approve: boolean) { await api(`/api/requests/${flag}`, { body: { approve } }); msg.success(approve ? '已同意' : '已拒绝'); load(); }
 
 let timer: any;
 const off = onPush((t, d) => {
-  if (t === 'activity') { acts.value.unshift(d); acts.value.length = Math.min(acts.value.length, 12); }
+  if (t === 'activity') { acts.value.unshift(d); acts.value.length = Math.min(acts.value.length, 30); }
   if (t === 'message' || t === 'request') { clearTimeout(timer); timer = setTimeout(load, 800); }
 });
 onMounted(load);
 onUnmounted(() => { off(); clearTimeout(timer); });
 const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 86400 ? `${Math.floor(u / 86400)} 天` : u > 3600 ? `${Math.floor(u / 3600)} 小时` : `${Math.floor(u / 60)} 分钟`; });
+const offline = computed(() => pulse.value.state === 'offline');
 </script>
 
 <template>
-  <n-space vertical :size="16">
-    <div class="bot-status" :class="[`is-${pulse.state}`, { clickable: pulse.state === 'offline' }]"
-      :role="pulse.state === 'offline' ? 'button' : 'status'" :tabindex="pulse.state === 'offline' ? 0 : undefined"
-      @click="pulse.state === 'offline' && askStart()" @keydown.enter="pulse.state === 'offline' && askStart()">
-      <span class="dot" />
-      <div class="text">
-        <div class="label">{{ view.label }}</div>
-        <div class="sub">{{ view.sub }}</div>
+  <div class="page">
+    <section class="overview" :class="`st-${pulse.state}`">
+      <div class="status" :class="{ clickable: offline }" :role="offline ? 'button' : 'status'" :tabindex="offline ? 0 : undefined"
+        @click="offline && askStart()" @keydown.enter="offline && askStart()">
+        <span class="bot-dot" />
+        <div class="min0">
+          <div class="label">{{ view.label }}</div>
+          <div class="sub">{{ view.sub }}</div>
+        </div>
+        <n-button v-if="offline" size="small" type="primary" @click.stop="askStart">启动</n-button>
+        <n-button v-else size="tiny" quaternary :loading="busy" @click.stop="askStop">停止</n-button>
       </div>
-      <n-button v-if="pulse.state !== 'offline'" size="small" quaternary :loading="busy" @click.stop="askStop">停止</n-button>
+      <div class="ministats">
+        <div class="mini"><b>{{ s.stats24h?.recv ?? 0 }}</b><span>24h 收到</span></div>
+        <div class="mini"><b>{{ s.stats24h?.sent ?? 0 }}</b><span>24h 发出</span></div>
+        <div class="mini"><b>{{ s.stats24h?.toolCalls ?? 0 }}</b><span>Agent 调用</span></div>
+        <div class="mini" :class="{ bad: s.stats24h?.toolFailed }"><b>{{ s.stats24h?.toolFailed ?? 0 }}</b><span>调用失败</span></div>
+        <div class="mini"><b>{{ s.mcpSessions?.length ?? 0 }}</b><span>MCP 会话</span></div>
+      </div>
+    </section>
+
+    <div class="dash">
+      <n-card title="最近动态" size="small">
+        <template #header-extra><n-button size="tiny" quaternary @click="router.push('/activity')">全部</n-button></template>
+        <div class="scroll"><ActivityList :items="acts" compact /></div>
+      </n-card>
+
+      <div class="side">
+        <n-card v-if="requests.length" :title="`待处理请求 ${requests.length}`" size="small" class="attention">
+          <div v-for="r in requests" :key="r.flag" class="req">
+            <div class="min0">
+              <div class="line">{{ r.kind === 'friend' ? `好友申请：${r.userId}` : `${r.subType === 'invite' ? '邀请入群' : '加群申请'}：${r.userId} → ${r.groupId}` }}</div>
+              <div class="hint line">{{ r.comment || '（无附言）' }}</div>
+            </div>
+            <n-space :size="4" :wrap="false"><n-button size="tiny" @click="handleReq(r.flag, false)">拒绝</n-button><n-button size="tiny" type="primary" @click="handleReq(r.flag, true)">同意</n-button></n-space>
+          </div>
+        </n-card>
+
+        <n-card :title="convs.length ? `未读会话 ${convs.length}` : '未读会话'" size="small">
+          <div v-if="!convs.length" class="hint">没有未读消息</div>
+          <div v-for="c in convs" :key="c.conv" class="conv" role="button" tabindex="0" @click="router.push(`/chat/${c.conv}`)" @keydown.enter="router.push(`/chat/${c.conv}`)">
+            <n-avatar round :size="26" :src="avatarOf(c.conv, 40)" />
+            <div class="min0">
+              <div class="line name">{{ c.name || c.conv }}</div>
+              <div class="line hint">{{ c.lastSender }}：{{ c.lastText }}</div>
+            </div>
+            <span class="hint">{{ fmtTime(c.lastTs) }}</span>
+            <n-tag size="tiny" :type="c.mentions ? 'error' : 'info'" round :bordered="false">{{ c.mentions ? `@我 ${c.mentions}` : c.unread }}</n-tag>
+          </div>
+        </n-card>
+
+        <n-card title="运行信息" size="small">
+          <template #header-extra>
+            <n-space :size="2"><n-button size="tiny" quaternary @click="reconnect">重新探测</n-button><n-button size="tiny" quaternary @click="refreshContacts">刷新联系人</n-button></n-space>
+          </template>
+          <dl class="kv">
+            <dt>账号</dt><dd>{{ s.self ? `${s.self.nickname}（${s.self.userId}）` : '—' }}</dd>
+            <dt>群 / 好友</dt><dd>{{ s.groups ?? 0 }} / {{ s.friends ?? 0 }}</dd>
+            <dt>已运行</dt><dd>{{ uptime }}</dd>
+            <dt>最后事件</dt><dd>{{ s.lastEventAt ? fmtFull(s.lastEventAt) : '—' }}</dd>
+            <dt>协议端</dt><dd><code>{{ s.endpoint?.ws }}</code></dd>
+            <dt>MCP</dt><dd><code>{{ s.mcpUrl }}</code></dd>
+          </dl>
+        </n-card>
+      </div>
     </div>
-
-    <n-grid cols="2 s:4" responsive="screen" :x-gap="12" :y-gap="12">
-      <n-gi><n-card size="small"><n-statistic label="24h 收到消息" :value="s.stats24h?.recv ?? 0" /></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="24h 发出消息" :value="s.stats24h?.sent ?? 0" /></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="24h Agent 调用" :value="s.stats24h?.toolCalls ?? 0"><template #suffix><span style="font-size: 13px; opacity: .6">失败 {{ s.stats24h?.toolFailed ?? 0 }}</span></template></n-statistic></n-card></n-gi>
-      <n-gi><n-card size="small"><n-statistic label="MCP 会话" :value="s.mcpSessions?.length ?? 0" /></n-card></n-gi>
-    </n-grid>
-
-    <n-grid cols="1 m:2" responsive="screen" :x-gap="12" :y-gap="12">
-      <n-gi>
-        <n-card title="最近动态" size="small" style="margin-bottom: 12px">
-          <template #header-extra><n-button size="tiny" quaternary @click="router.push('/activity')">全部</n-button></template>
-          <ActivityList :items="acts" compact />
-        </n-card>
-        <n-card title="未读会话" size="small">
-          <n-empty v-if="!convs.length" description="没有未读消息" />
-          <n-list v-else hoverable clickable>
-            <n-list-item v-for="c in convs" :key="c.conv" @click="router.push(`/chat/${c.conv}`)">
-              <n-thing>
-                <template #avatar><n-avatar round :src="avatarOf(c.conv, 40)" /></template>
-                <template #header>{{ c.name || c.conv }}</template>
-                <template #header-extra><n-tag size="small" :type="c.mentions ? 'error' : 'info'" round>{{ c.mentions ? `@我 ${c.mentions}` : c.unread }}</n-tag></template>
-                <template #description><span style="font-size: 12px; opacity: .7">{{ fmtTime(c.lastTs) }} {{ c.lastSender }}：{{ c.lastText.slice(0, 40) }}</span></template>
-              </n-thing>
-            </n-list-item>
-          </n-list>
-        </n-card>
-      </n-gi>
-      <n-gi>
-        <n-space vertical :size="12">
-          <n-card title="运行状态" size="small">
-            <n-descriptions :column="1" :label-placement="isNarrow ? 'top' : 'left'" size="small">
-              <n-descriptions-item label="账号">{{ s.self ? `${s.self.nickname}（${s.self.userId}）` : '—' }}</n-descriptions-item>
-              <n-descriptions-item label="协议端">{{ s.endpoint?.ws }} · {{ s.endpoint?.http }}</n-descriptions-item>
-              <n-descriptions-item label="最后事件">{{ s.lastEventAt ? fmtFull(s.lastEventAt) : '—' }}</n-descriptions-item>
-              <n-descriptions-item label="群 / 好友">{{ s.groups }} / {{ s.friends }}</n-descriptions-item>
-              <n-descriptions-item label="系统表情">{{ s.facesFromQQ ? '已从 QQ 同步' : '使用内置表' }}</n-descriptions-item>
-              <n-descriptions-item label="已运行">{{ uptime }}</n-descriptions-item>
-              <n-descriptions-item label="MCP 地址"><code>{{ s.mcpUrl }}</code></n-descriptions-item>
-            </n-descriptions>
-            <template #action><n-space><n-button size="small" @click="reconnect">重新探测</n-button><n-button size="small" @click="api('/api/contacts/refresh', { method: 'POST' }).then(load)">刷新联系人</n-button></n-space></template>
-          </n-card>
-          <n-card v-if="requests.length" title="好友 / 加群请求" size="small">
-            <n-list>
-              <n-list-item v-for="r in requests" :key="r.flag">
-                <n-thing :title="r.kind === 'friend' ? `好友申请：${r.userId}` : `${r.subType === 'invite' ? '邀请入群' : '加群申请'}：${r.userId} → ${r.groupId}`" :description="r.comment || '（无附言）'" />
-                <template #suffix><n-space><n-button size="tiny" @click="handleReq(r.flag, false)">拒绝</n-button><n-button size="tiny" type="primary" @click="handleReq(r.flag, true)">同意</n-button></n-space></template>
-              </n-list-item>
-            </n-list>
-          </n-card>
-        </n-space>
-      </n-gi>
-    </n-grid>
-  </n-space>
+  </div>
 </template>
 
 <style scoped>
-.bot-status { --c: #8a8f98; display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
-.bot-status.is-idle { --c: #18a058; }
-.bot-status.is-receiving { --c: #2080f0; }
-.bot-status.is-thinking { --c: #8a63d2; }
-.bot-status.is-sending { --c: #0e9f9f; }
-.bot-status.is-connecting { --c: #f0a020; }
-.bot-status.clickable { cursor: pointer; }
-.bot-status.clickable:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
-.bot-status.clickable:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
-.dot { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
-.is-receiving .dot, .is-thinking .dot, .is-sending .dot, .is-connecting .dot { animation: pulse 1.1s ease-in-out infinite; }
-.text { flex: 1; min-width: 0; }
-.label { font-size: 20px; font-weight: 600; line-height: 1.3; }
-.sub { font-size: 13px; opacity: .7; overflow-wrap: anywhere; }
-@keyframes pulse { 50% { opacity: .3; transform: scale(.75); } }
-@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+.overview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 8%, transparent); }
+.status { flex: 1 1 280px; min-width: 0; display: flex; align-items: center; gap: 10px; border-radius: 6px; }
+.status.clickable { cursor: pointer; }
+.status.clickable:hover .label { text-decoration: underline; }
+.status.clickable:focus-visible { outline: 2px solid var(--c); outline-offset: 4px; }
+.min0 { flex: 1; min-width: 0; }
+.label { font-size: 17px; font-weight: 600; line-height: 1.3; }
+.sub { font-size: 12px; opacity: .7; overflow-wrap: anywhere; }
+.ministats { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+.mini { display: flex; flex-direction: column; align-items: flex-start; font-variant-numeric: tabular-nums; }
+.mini b { font-size: 17px; font-weight: 600; line-height: 1.25; }
+.mini span { font-size: 11px; opacity: .6; }
+.mini.bad b { color: #d03050; }
+.dash { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 10px; align-items: start; }
+.side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.scroll { max-height: calc(100vh - 215px); overflow: auto; }
+.attention { border-color: #f0a020; }
+.req { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.conv { display: flex; align-items: center; gap: 8px; padding: 4px; margin: 0 -4px; border-radius: 6px; cursor: pointer; }
+.conv:hover { background: rgba(128,128,128,.1); }
+.conv:focus-visible { outline: 2px solid #12b7f5; }
+.line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.name { font-size: 13px; }
+.conv .hint { flex: none; }
+.conv .min0 .hint { display: block; }
+@media (max-width: 860px) { .dash { grid-template-columns: minmax(0, 1fr); } .scroll { max-height: 320px; } }
 </style>

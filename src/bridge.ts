@@ -99,6 +99,7 @@ export class Bridge extends EventEmitter {
 
   /** 连接 QQ 协议端，机器人开始工作 */
   async connect() {
+    if (this.bot.running) return;
     await this.rediscover();
     this.bot.start();
     // 等连接有结果再返回：调用方（控制台）拿到的才是最终状态

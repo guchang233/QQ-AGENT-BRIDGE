@@ -52,6 +52,7 @@ export class OneBotClient extends EventEmitter {
   }
 
   start() {
+    if (!this.stopped) return; // 已在运行：重复启动不能多开连接
     this.stopped = false;
     this.connect();
   }
@@ -74,6 +75,7 @@ export class OneBotClient extends EventEmitter {
 
   private connect() {
     if (this.stopped) return;
+    this.ws?.terminate(); // 保证任何时候只有一条连接
     this.setState('connecting');
     const headers: Record<string, string> = {};
     if (this.ep.wsToken) headers.authorization = `Bearer ${this.ep.wsToken}`;

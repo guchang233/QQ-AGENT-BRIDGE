@@ -20,22 +20,22 @@ const color: Record<string, string> = { debug: '#888', info: 'inherit', warn: '#
 </script>
 
 <template>
-  <n-space vertical>
-    <n-space align="center">
-      <n-select v-model:value="level" style="width: 110px" :options="['debug', 'info', 'warn', 'error'].map((v) => ({ label: v, value: v }))" />
-      <n-input v-model:value="q" placeholder="筛选" clearable style="width: 220px" />
-      <n-button @click="load">刷新</n-button>
-      <span style="font-size: 13px">自动滚动</span><n-switch v-model:value="follow" size="small" />
-    </n-space>
+  <div class="page">
+    <div class="toolbar">
+      <n-select v-model:value="level" size="small" style="width: 100px" :options="['debug', 'info', 'warn', 'error'].map((v) => ({ label: v, value: v }))" />
+      <n-input v-model:value="q" size="small" placeholder="筛选" clearable style="width: 200px" />
+      <n-button size="small" @click="load">刷新</n-button>
+      <span class="hint">自动滚动</span><n-switch v-model:value="follow" size="small" />
+    </div>
     <div ref="box" class="box">
       <div v-for="(l, i) in shown" :key="i" :style="{ color: color[l.level] }">
         <span class="t">{{ new Date(l.ts).toLocaleTimeString('zh-CN', { hour12: false }) }}</span> <b>{{ l.level.toUpperCase() }}</b> [{{ l.scope }}] {{ l.msg }}
       </div>
     </div>
-  </n-space>
+  </div>
 </template>
 
 <style scoped>
-.box { height: calc(100vh - 170px); overflow: auto; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6; padding: 8px; border: 1px solid rgba(128,128,128,.25); border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+.box { height: calc(100vh - 118px); overflow: auto; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6; padding: 8px; border: 1px solid rgba(128,128,128,.25); border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
 .t { opacity: .55; }
 </style>

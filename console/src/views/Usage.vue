@@ -61,69 +61,80 @@ const turnCols: DataTableColumns<any> = [
 ];
 
 let t: any;
+const detail = ref<'group' | 'turns'>('group');
 const off = onPush((type) => { if (type === 'usage') { clearTimeout(t); t = setTimeout(load, 1500); } });
 onMounted(load);
 onUnmounted(() => { off(); clearTimeout(t); });
 </script>
 
 <template>
-  <n-space vertical :size="14">
-    <n-empty v-if="sum && !sum.total.turns" description="还没有用量记录。接入 DeepSeek Harness 并开启仿真后，这里会显示每一轮的 Token 与费用。" />
-    <n-grid v-if="sum" cols="2 s:4" responsive="screen" :x-gap="12" :y-gap="12">
-      <n-gi v-for="(lbl, k) in { today: '今天', last7d: '近 7 天', last30d: '近 30 天', total: '累计' }" :key="k">
-        <n-card size="small">
-          <n-statistic :label="`${lbl}费用`" :value="money(sum[k].cost)" />
-          <n-text depth="3" style="font-size: 12px">{{ sum[k].turns }} 轮 · {{ tok(sum[k].total) }} tokens · 命中 {{ pct(sum[k].cacheHitRate) }}<span v-if="sum[k].hasEstimated"> · 含估算</span></n-text>
+  <div class="page">
+    <n-card v-if="sum && !sum.total.turns" size="small">
+      <div class="toolbar"><span class="hint grow">还没有用量记录。接入 DeepSeek Harness 并开启仿真后，这里会显示每一轮的 Token 与费用。</span><n-button size="tiny" quaternary @click="openPrices">价目设置</n-button></div>
+    </n-card>
+    <template v-else-if="sum">
+      <div class="sums">
+        <n-card v-for="(lbl, k) in { today: '今天', last7d: '近 7 天', last30d: '近 30 天', total: '累计' }" :key="k" size="small">
+          <div class="sum-top"><span class="hint">{{ lbl }}</span><b>{{ money(sum[k].cost) }}</b></div>
+          <div class="hint">{{ sum[k].turns }} 轮 · {{ tok(sum[k].total) }} tokens · 命中 {{ pct(sum[k].cacheHitRate) }}<span v-if="sum[k].hasEstimated"> · 含估算</span></div>
         </n-card>
-      </n-gi>
-    </n-grid>
-
-    <n-card size="small" title="每日费用">
-      <template #header-extra>
-        <n-space>
-          <n-radio-group v-model:value="days" size="small" @update:value="load">
-            <n-radio-button :value="7">7 天</n-radio-button><n-radio-button :value="30">30 天</n-radio-button><n-radio-button :value="90">90 天</n-radio-button>
-          </n-radio-group>
-          <n-button size="small" @click="openPrices">价目设置</n-button>
-        </n-space>
-      </template>
-      <n-empty v-if="!chart.list.length" description="暂无数据" size="small" />
-      <div v-else style="overflow-x: auto">
-        <svg :width="chart.width" height="170">
-          <g v-for="(d, i) in chart.list" :key="d.day">
-            <n-tooltip>
-              <template #trigger>
-                <g>
-                  <rect :x="i * (chart.w + 4)" :y="150 - (d.cost / chart.max) * 140" :width="chart.w" :height="Math.max(1, (d.cost / chart.max) * 140)" fill="#12b7f5" opacity="0.55" rx="2" />
-                  <rect :x="i * (chart.w + 4)" :y="150 - (d.peakCost / chart.max) * 140" :width="chart.w" :height="(d.peakCost / chart.max) * 140" fill="#0b8fc4" rx="2" />
-                </g>
-              </template>
-              {{ d.day }}：{{ money(d.cost) }}（高峰 {{ money(d.peakCost) }}）· {{ d.turns }} 轮 · 输出 {{ tok(d.output) }}
-            </n-tooltip>
-            <text v-if="chart.list.length <= 31 || i % 3 === 0" :x="i * (chart.w + 4) + chart.w / 2" y="165" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.5">{{ d.day.slice(5) }}</text>
-          </g>
-        </svg>
-        <n-text depth="3" style="font-size: 12px">深色部分为高峰时段费用（北京时间工作日 9–12、14–18 点，按价目设置的倍率计）</n-text>
       </div>
-    </n-card>
 
-    <n-card size="small" title="分组">
-      <template #header-extra>
-        <n-radio-group v-model:value="by" size="small" @update:value="load">
-          <n-radio-button value="conv">按会话</n-radio-button><n-radio-button value="model">按模型</n-radio-button><n-radio-button value="driver">按驱动</n-radio-button>
-        </n-radio-group>
-      </template>
-      <n-data-table :columns="cols" :data="rows" size="small" :scroll-x="640" :row-key="(r: any) => r.key" />
-    </n-card>
+      <n-card size="small" title="每日费用">
+        <template #header-extra>
+          <n-space :size="6">
+            <n-radio-group v-model:value="days" size="small" @update:value="load">
+              <n-radio-button :value="7">7 天</n-radio-button><n-radio-button :value="30">30 天</n-radio-button><n-radio-button :value="90">90 天</n-radio-button>
+            </n-radio-group>
+            <n-button size="small" quaternary @click="openPrices">价目设置</n-button>
+          </n-space>
+        </template>
+        <div v-if="!chart.list.length" class="hint">暂无数据</div>
+        <div v-else style="overflow-x: auto">
+          <svg :width="chart.width" height="140" style="display: block">
+            <g v-for="(d, i) in chart.list" :key="d.day" transform="translate(0, -30)">
+              <n-tooltip>
+                <template #trigger>
+                  <g>
+                    <rect :x="i * (chart.w + 4)" :y="150 - (d.cost / chart.max) * 110" :width="chart.w" :height="Math.max(1, (d.cost / chart.max) * 110)" fill="#12b7f5" opacity="0.55" rx="2" />
+                    <rect :x="i * (chart.w + 4)" :y="150 - (d.peakCost / chart.max) * 110" :width="chart.w" :height="(d.peakCost / chart.max) * 110" fill="#0b8fc4" rx="2" />
+                  </g>
+                </template>
+                {{ d.day }}：{{ money(d.cost) }}（高峰 {{ money(d.peakCost) }}）· {{ d.turns }} 轮 · 输出 {{ tok(d.output) }}
+              </n-tooltip>
+              <text v-if="chart.list.length <= 31 || i % 3 === 0" :x="i * (chart.w + 4) + chart.w / 2" y="165" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.5">{{ d.day.slice(5) }}</text>
+            </g>
+          </svg>
+          <div class="hint">深色为高峰时段费用（北京时间工作日 9–12、14–18 点）</div>
+        </div>
+      </n-card>
 
-    <n-card size="small" title="最近回合">
-      <n-data-table :columns="turnCols" :data="turns" size="small" :max-height="360" :scroll-x="760" :row-key="(r: any) => `${r.driver}${r.session}${r.turn}`" />
-    </n-card>
+      <n-card size="small">
+        <div class="toolbar" style="margin-bottom: 6px">
+          <n-radio-group v-model:value="detail" size="small">
+            <n-radio-button value="group">分组统计</n-radio-button><n-radio-button value="turns">最近回合</n-radio-button>
+          </n-radio-group>
+          <n-radio-group v-if="detail === 'group'" v-model:value="by" size="small" @update:value="load">
+            <n-radio-button value="conv">按会话</n-radio-button><n-radio-button value="model">按模型</n-radio-button><n-radio-button value="driver">按驱动</n-radio-button>
+          </n-radio-group>
+        </div>
+        <n-data-table v-if="detail === 'group'" :columns="cols" :data="rows" size="small" :max-height="360" :scroll-x="640" :row-key="(r: any) => r.key" />
+        <n-data-table v-else :columns="turnCols" :data="turns" size="small" :max-height="360" :scroll-x="760" :row-key="(r: any) => `${r.driver}${r.session}${r.turn}`" />
+      </n-card>
+    </template>
 
     <n-modal v-model:show="showPrices" preset="card" title="价目设置（元 / 百万 token，空闲时段价）" style="max-width: 640px">
       <n-text depth="3" style="font-size: 12px">models 里每个模型填 cacheHit（缓存命中）、cacheMiss（未命中）、cacheWrite（可选）、output（输出）。高峰价 = 空闲价 × peakMultiplier。保存后会按新价目重算全部历史记录。</n-text>
       <n-input v-model:value="pricesText" type="textarea" :autosize="{ minRows: 12, maxRows: 24 }" style="font-family: monospace; margin-top: 8px" />
       <template #footer><n-space justify="end"><n-button @click="showPrices = false">取消</n-button><n-button type="primary" @click="savePrices">保存并重算</n-button></n-space></template>
     </n-modal>
-  </n-space>
+  </div>
 </template>
+
+<style scoped>
+.sums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.sum-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sum-top b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.grow { flex: 1; }
+@media (max-width: 760px) { .sums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>

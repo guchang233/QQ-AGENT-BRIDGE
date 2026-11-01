@@ -72,9 +72,9 @@ onMounted(load);
 </script>
 
 <template>
-  <n-space vertical :size="16" style="max-width: 820px">
+  <div class="page" style="max-width: 760px; margin: 0 auto">
     <n-card title="发说说" size="small">
-      <n-input v-model:value="content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" placeholder="分享新鲜事…" />
+      <n-input v-model:value="content" type="textarea" :autosize="{ minRows: 2, maxRows: 10 }" placeholder="分享新鲜事…" />
       <n-space style="margin-top: 8px" align="center">
         <n-button size="small" @click="pick">添加图片（{{ images.length }}/9）</n-button>
         <span v-for="(i, k) in images" :key="i.path" style="font-size: 12px">{{ i.name }} <a style="cursor: pointer" @click="images.splice(k, 1)">✕</a></span>
@@ -108,7 +108,7 @@ onMounted(load);
             <n-thing>
               <template #avatar><n-avatar round :src="userAvatar(f.uin)" /></template>
               <template #header>{{ f.nick || f.uin }}</template>
-              <template #description><span style="font-size: 12px; opacity: .6">{{ f.time ? fmtFull(f.time) : '' }} · tid {{ f.tid }}</span></template>
+              <template #description><span style="font-size: 12px; opacity: .6">{{ f.time ? fmtFull(f.time) : '' }}</span></template>
               <div style="white-space: pre-wrap">{{ f.content }}</div>
               <n-image-group v-if="f.pics.length"><n-space style="margin-top: 6px"><n-image v-for="p in f.pics" :key="p" :src="p" width="110" height="110" object-fit="cover" style="border-radius: 6px" /></n-space></n-image-group>
               <template #action>
@@ -125,5 +125,5 @@ onMounted(load);
       </n-spin>
       <n-collapse v-if="raw" style="margin-top: 8px"><n-collapse-item title="原始数据" name="raw"><n-code :code="JSON.stringify(raw, null, 2)" language="json" style="max-height: 300px; overflow: auto; font-size: 12px" /></n-collapse-item></n-collapse>
     </n-card>
-  </n-space>
+  </div>
 </template>

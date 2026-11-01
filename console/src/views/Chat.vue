@@ -227,8 +227,8 @@ const showChat = computed(() => !narrow.value || !!current.value);
 </template>
 
 <style scoped>
-.chat { display: flex; gap: 12px; height: calc(100vh - 85px); }
-.side { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; }
+.chat { display: flex; gap: 12px; height: calc(100vh - 77px); }
+.side { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid rgba(128,128,128,.2); border-radius: 8px; overflow: hidden; }
 .conv { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 6px; cursor: pointer; }
 .conv:hover { background: rgba(128,128,128,.08); }
