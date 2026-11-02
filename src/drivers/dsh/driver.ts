@@ -10,6 +10,10 @@ import { createLogger } from '../../util/log.ts';
 const log = createLogger('dsh');
 const BUSY_LEASE_MS = 15 * 60_000;
 
+export interface ModelCatalog {
+  default: { provider: string; model: string; reasoningEffort?: string } | null;
+  providers: { id: string; name: string; models: { id: string; name: string; efforts: string[]; defaultEffort?: string }[] }[];
+}
 interface SessionRec { sessionId: string; preset: string; model: string; created: number }
 interface TurnState { conv: string; turn: number; startedAt: number; text: string; tools: string[]; model: string; retries: Map<string, number> }
 
@@ -102,7 +106,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
 
   status(): DriverStatus {
     const now = Date.now();
-    return { id: this.id, kind: this.kind, label: this.label, state: this.state, detail: this.detail, sessions: this.sessions.size,
+    return { id: this.id, kind: this.kind, label: this.label, state: this.state, detail: this.modelWarning && this.state === 'ready' ? this.modelWarning : this.detail, sessions: this.sessions.size,
       busy: [...this.busyUntil].filter(([, t]) => t > now).map(([c]) => c) };
   }
 
@@ -136,12 +140,54 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     return v?.presets ?? [];
   }
 
+  /** DSH 里实际可用的服务商和模型（缓存 1 分钟） */
+  private catalogCache: { at: number; v: ModelCatalog } | null = null;
+  async modelCatalog(force = false): Promise<ModelCatalog> {
+    if (!force && this.catalogCache && Date.now() - this.catalogCache.at < 60_000) return this.catalogCache.v;
+    const v: any = await this.client.call('session/modelCatalog', {});
+    const cat: ModelCatalog = {
+      default: v?.default ?? null,
+      providers: (v?.groups ?? []).map((g: any) => ({ id: String(g.id), name: String(g.name ?? g.id),
+        models: (g.models ?? []).map((m: any) => ({ id: String(m.id), name: String(m.name ?? m.id), efforts: (m.reasoning?.efforts ?? []).map((e: any) => String(e.id)), defaultEffort: m.reasoning?.defaultEffort })) })),
+    };
+    this.catalogCache = { at: Date.now(), v: cat };
+    return cat;
+  }
+
+  /**
+   * 配置的服务商/模型在 DSH 里不存在时（换了账号、模型下架、手填错了）改用 DSH 的默认模型，
+   * 思考强度不被该模型支持时改用它的默认强度。读不到模型目录（旧版 DSH）时照原配置。
+   */
+  modelWarning = '';
+  private async resolveModel(): Promise<{ provider: string; model: string; reasoningEffort?: string }> {
+    const c = this.cfg;
+    let cat: ModelCatalog;
+    try { cat = await this.modelCatalog(); } catch { return { provider: c.provider, model: c.model, reasoningEffort: c.reasoningEffort }; }
+    let p = cat.providers.find((x) => x.id === c.provider);
+    let m = p?.models.find((x) => x.id === c.model);
+    let warn = '';
+    if (!m) {
+      const d = cat.default;
+      p = cat.providers.find((x) => x.id === d?.provider) ?? cat.providers[0];
+      m = p?.models.find((x) => x.id === d?.model) ?? p?.models[0];
+      if (!p || !m) return { provider: c.provider, model: c.model, reasoningEffort: c.reasoningEffort };
+      warn = `配置的模型 ${c.provider}/${c.model} 在 DSH 里不存在，已改用 ${p.id}/${m.id}。请在控制台「Agent 接入 → DeepSeek Harness」重新选择`;
+    }
+    const effort = !m.efforts.length || m.efforts.includes(c.reasoningEffort) ? c.reasoningEffort : (m.defaultEffort ?? m.efforts[0]);
+    if (warn !== this.modelWarning) {
+      this.modelWarning = warn;
+      if (warn) { log.warn(warn); this.bridge.activity({ kind: 'info', level: 'warn', actor: 'DSH', title: '模型不存在，已改用默认模型', detail: warn }); }
+    }
+    return { provider: p!.id, model: m.id, reasoningEffort: effort };
+  }
+
   /** 同 qq-bridge 的 ensureChatModel：按「模型配置版本」对每个会话设置一次模型，失败重试一次。 */
   private modelApplied = new Map<string, string>();
   private async ensureChatModel(sessionId: string): Promise<'applied' | 'not-found' | 'failed'> {
-    const c = this.cfg;
+    if (!this.cfg.model) return 'applied';
+    const c = await this.resolveModel();
     const epoch = `${c.provider}|${c.model}|${c.reasoningEffort}`;
-    if (!c.model || this.modelApplied.get(sessionId) === epoch) return 'applied';
+    if (this.modelApplied.get(sessionId) === epoch) return 'applied';
     let last: any = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
@@ -155,7 +201,9 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
       }
     }
-    if (/not[- ]?found/i.test(String(last?.message ?? ''))) { this.modelApplied.set(sessionId, epoch); return 'not-found'; }
+    // 只有「会话不存在」才重建会话；模型、服务商找不到不能当成会话丢了，否则每条消息都会重建会话
+    const reason = String(last?.message ?? '').replace(/^session.selectModel 失败：/, '');
+    if (/not[- ]?found/i.test(reason) && !/model|provider/i.test(reason)) { this.modelApplied.set(sessionId, epoch); return 'not-found'; }
     return 'failed';
   }
 

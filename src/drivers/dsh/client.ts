@@ -24,7 +24,7 @@ export interface DshOptions { baseUrl: string; authToken?: string; allowRemote?:
 const WRAP: Record<string, string | null> = {
   'session/list': '_request', 'session/create': 'request', 'session/prompt': 'request', 'session/cancel': 'request',
   'session/selectModel': 'request', 'session/rename': 'request', 'session/updateQueue': 'request', 'session/follow': 'request',
-  'session/projections': 'request', 'session/modelCatalog': 'request',
+  'session/projections': 'request', 'session/modelCatalog': null,
   'workspace/create': 'request', 'workspace/rename': 'request', 'workspace/archiveSession': 'request',
   'agentPresets/list': null, 'settings/describe': null,
 };

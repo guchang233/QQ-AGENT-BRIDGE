@@ -340,6 +340,12 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
       return { ok: true, baseUrl: bridge.config.drivers.dsh.baseUrl, presets: presets.map((p: any) => p.id), hasPreset: presets.some((p: any) => p.id === bridge.config.drivers.dsh.preset) };
     } catch (e: any) { return { ok: false, error: e.message }; }
   });
+  /** DSH 里实际可用的服务商、模型和思考强度，给控制台下拉框用 */
+  app.get('/api/drivers/dsh/models', async () => {
+    const d: any = bridge.drivers.get('dsh');
+    if (!d?.modelCatalog) return { ok: false, error: '驱动未注册' };
+    try { await d.locate?.(); return { ok: true, ...(await d.modelCatalog(true)) }; } catch (e: any) { return { ok: false, error: e.message }; }
+  });
   app.put('/api/drivers/dsh/config', async (req) => {
     const cfg = structuredClone(bridge.config);
     const b = (req.body ?? {}) as any;

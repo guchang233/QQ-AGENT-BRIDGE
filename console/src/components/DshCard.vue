@@ -14,6 +14,33 @@ const test = ref<any>(null);
 async function load() {
   info.value = await api('/api/drivers');
   form.value = { ...info.value.dsh.config };
+  loadModels();
+}
+
+// 模型目录：从 DSH 读取实际可用的服务商和模型，只能从中选择
+const catalog = ref<any>(null);
+const loadingModels = ref(false);
+async function loadModels() {
+  loadingModels.value = true;
+  try { catalog.value = await api('/api/drivers/dsh/models'); } catch (e: any) { catalog.value = { ok: false, error: e.message }; } finally { loadingModels.value = false; }
+}
+const providers = computed<any[]>(() => (catalog.value?.ok ? catalog.value.providers : []));
+const providerOptions = computed(() => providers.value.map((p) => ({ label: p.name === p.id ? p.id : `${p.name}（${p.id}）`, value: p.id })));
+const curProvider = computed(() => providers.value.find((p) => p.id === form.value.provider));
+const modelOptions = computed(() => (curProvider.value?.models ?? []).map((m: any) => ({ label: m.name === m.id ? m.id : `${m.name}（${m.id}）`, value: m.id })));
+const curModel = computed(() => curProvider.value?.models.find((m: any) => m.id === form.value.model));
+const effortOptions = computed(() => (curModel.value?.efforts?.length ? curModel.value.efforts : ['off', 'low', 'high', 'max']).map((v: string) => ({ label: v, value: v })));
+/** 当前配置在 DSH 里不存在（保存前提示） */
+const invalidModel = computed(() => catalog.value?.ok && form.value.model && !curModel.value);
+function pickProvider(id: string) {
+  form.value.provider = id;
+  const p = providers.value.find((x) => x.id === id);
+  if (p && !p.models.some((m: any) => m.id === form.value.model)) pickModel(p.models[0]?.id ?? '');
+}
+function pickModel(id: string) {
+  form.value.model = id;
+  const m = curProvider.value?.models.find((x: any) => x.id === id);
+  if (m?.efforts?.length && !m.efforts.includes(form.value.reasoningEffort)) form.value.reasoningEffort = m.defaultEffort ?? m.efforts[0];
 }
 const status = computed(() => info.value?.drivers?.find((d: any) => d.id === 'dsh'));
 const setup = computed(() => info.value?.dsh?.setup);
@@ -88,15 +115,27 @@ onUnmounted(off);
 
     <div class="sec">模型与连接</div>
     <n-form class="form-2" :label-placement="isNarrow ? 'top' : 'left'" label-width="72" size="small">
-      <n-form-item label="模型"><n-input v-model:value="form.model" placeholder="deepseek-flash" /></n-form-item>
-      <n-form-item label="Provider"><n-input v-model:value="form.provider" placeholder="provider" /></n-form-item>
-      <n-form-item label="思考强度"><n-select v-model:value="form.reasoningEffort" :options="['off', 'low', 'high', 'max'].map((v) => ({ label: v, value: v }))" /></n-form-item>
+      <template v-if="catalog?.ok">
+        <n-form-item label="服务商"><n-select :value="form.provider" :options="providerOptions" :loading="loadingModels" @update:value="pickProvider" /></n-form-item>
+        <n-form-item label="模型"><n-select :value="form.model" :options="modelOptions" filterable :loading="loadingModels" @update:value="pickModel" /></n-form-item>
+      </template>
+      <template v-else>
+        <n-form-item label="服务商"><n-input v-model:value="form.provider" placeholder="deepseek-official" /></n-form-item>
+        <n-form-item label="模型"><n-input v-model:value="form.model" placeholder="deepseek-flash" /></n-form-item>
+      </template>
+      <n-form-item label="思考强度"><n-select v-model:value="form.reasoningEffort" :options="effortOptions" /></n-form-item>
       <n-form-item label="预设"><n-input v-model:value="form.preset" /></n-form-item>
       <n-form-item label="工具审批"><n-select v-model:value="form.approvals" :options="[{ label: '一律拒绝（推荐）', value: 'reject' }, { label: '交给控制台审批', value: 'console' }]" /></n-form-item>
       <n-form-item label="地址"><n-input v-model:value="form.baseUrl" /></n-form-item>
       <n-form-item label="自动发现"><n-switch v-model:value="form.autoDiscover" /><span class="switch-hint">自动找本机 DSH 端口</span></n-form-item>
       <n-form-item label="启用驱动"><n-switch v-model:value="form.enabled" /></n-form-item>
     </n-form>
+    <n-alert v-if="invalidModel" type="warning" :show-icon="false" style="margin-bottom: 8px; font-size: 13px">
+      当前配置的 {{ form.provider }}/{{ form.model }} 在 DSH 里不存在，实际会用 DSH 的默认模型。请从下拉框重新选择后保存。
+    </n-alert>
+    <n-text v-else-if="catalog && !catalog.ok" depth="3" style="display: block; margin-bottom: 8px; font-size: 12px">
+      读不到 DSH 的模型列表（{{ catalog.error }}），只能手动填写。DSH 启动后<a style="cursor: pointer" @click="loadModels">重新读取</a>。
+    </n-text>
     <n-button size="small" type="primary" @click="save">保存</n-button>
   </n-card>
 </template>

@@ -17,6 +17,7 @@ import { actionTier } from '../src/onebot/catalog.ts';
 import { isPrivateIp } from '../src/util/safe-fetch.ts';
 import { Policy } from '../src/policy.ts';
 import { ConfigSchema } from '../src/config.ts';
+import { DshDriver } from '../src/drivers/dsh/driver.ts';
 
 describe('消息 DSL', () => {
   const face = (s: string) => (s === '微笑' ? 14 : /^\d+$/.test(s) ? Number(s) : undefined);
@@ -282,5 +283,38 @@ describe('记忆引擎', () => {
     expect(again.overview().total).toBe(2);
     again.remember({ content: '升级后还能写入新记忆', scope: 'private:1' });
     expect(again.recall({ query: '写入新记忆', reinforce: false })).toHaveLength(1);
+  });
+});
+
+describe('DSH 模型选择', () => {
+  const catalog = { default: { provider: 'deepseek-official', model: 'deepseek-flash' }, groups: [
+    { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-flash', reasoning: { efforts: [{ id: 'off' }, { id: 'high' }, { id: 'max' }], defaultEffort: 'high' } }] },
+    { id: 'magpie', name: 'Magpie', models: [{ id: 'workbuddy/hy4-preview', reasoning: { efforts: [{ id: 'high' }] } }] },
+  ] };
+  const make = (dsh: any) => {
+    const calls: any[] = [];
+    const acts: any[] = [];
+    const d: any = Object.create(DshDriver.prototype);
+    Object.assign(d, {
+      bridge: { config: { drivers: { dsh } }, activity: (a: any) => acts.push(a) },
+      client: { call: async (m: string, p: any) => { calls.push([m, p]); if (m === 'session/modelCatalog') return catalog; if (m === 'session/selectModel') return {}; } },
+      catalogCache: null, modelWarning: '', modelApplied: new Map(),
+    });
+    return { d, calls, acts };
+  };
+  it('配置的模型不存在时改用 DSH 默认模型，并给出提示', async () => {
+    const { d, calls, acts } = make({ provider: 'gone', model: 'no-such', reasoningEffort: 'max' });
+    expect(await d.ensureChatModel('s1')).toBe('applied');
+    expect(calls.find((c) => c[0] === 'session/selectModel')[1]).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' });
+    expect(d.modelWarning).toContain('gone/no-such');
+    expect(acts).toHaveLength(1);
+    await d.ensureChatModel('s2');
+    expect(acts).toHaveLength(1); // 同一问题只提示一次
+  });
+  it('思考强度不被模型支持时改用它支持的强度', async () => {
+    const { d, calls } = make({ provider: 'magpie', model: 'workbuddy/hy4-preview', reasoningEffort: 'off' });
+    await d.ensureChatModel('s1');
+    expect(calls.find((c) => c[0] === 'session/selectModel')[1]).toMatchObject({ provider: 'magpie', model: 'workbuddy/hy4-preview', reasoningEffort: 'high' });
+    expect(d.modelWarning).toBe('');
   });
 });
