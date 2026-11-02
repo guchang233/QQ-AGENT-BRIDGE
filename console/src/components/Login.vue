@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { NCard, NForm, NFormItem, NInput, NButton, NAlert, NSteps, NStep, NSpace, NRadioGroup, NRadio, NDynamicTags, NSpin, NText, useMessage } from 'naive-ui';
+import { NCard, NForm, NFormItem, NInput, NButton, NAlert, NSteps, NStep, NSpace, NRadioGroup, NRadio, NDynamicTags, NSpin, NText, NSwitch, useMessage } from 'naive-ui';
 import { api, state, checkSession, isNarrow } from '../api';
 
 const msg = useMessage();
@@ -16,15 +16,16 @@ async function login() {
 const step = ref(1);
 const disc = ref<any>(null);
 const discovering = ref(false);
-const form = ref({ password: '', password2: '', owners: [] as string[], snowlumaHome: '', wsUrl: '', httpUrl: '', accessToken: '', accessMode: 'all' as 'all' | 'allowlist' });
+const form = ref({ password: '', password2: '', owners: [] as string[], snowlumaHome: '', wsUrl: '', httpUrl: '', accessToken: '', accessMode: 'all' as 'all' | 'allowlist', autoConnect: false });
 
 async function runDiscover() {
   discovering.value = true;
   try {
-    const r = await api('/api/setup/discover');
+    // 用向导里填的目录、地址和 token 探测，不用先保存
+    const { snowlumaHome, wsUrl, httpUrl, accessToken } = form.value;
+    const r = await api('/api/setup/discover', { body: { snowlumaHome, wsUrl, httpUrl, accessToken } });
     disc.value = r;
-    form.value.snowlumaHome = r.snowlumaHome ?? '';
-    if (r.discovery?.self?.user_id && !form.value.owners.length) form.value.owners = [];
+    if (!form.value.snowlumaHome && r.homeValid) form.value.snowlumaHome = r.snowlumaHome;
   } catch (e: any) { msg.error(e.message); } finally { discovering.value = false; }
 }
 
@@ -33,8 +34,9 @@ async function finish() {
   if (form.value.password !== form.value.password2) return msg.error('两次输入的密码不一致');
   loading.value = true;
   try {
-    await api('/api/setup', { body: { ...form.value, password2: undefined } });
-    msg.success('设置完成');
+    const r = await api('/api/setup', { body: { ...form.value, password2: undefined } });
+    if (r.connected) msg.success('设置完成，机器人已连接');
+    else msg.warning('设置完成。还没连上 QQ 协议端，可以在仪表盘点状态框重试', { duration: 6000 });
     await checkSession();
   } catch (e: any) { msg.error(e.message); } finally { loading.value = false; }
 }
@@ -68,10 +70,22 @@ onMounted(() => { if (state.setupRequired) runDiscover(); });
             地址：{{ disc.discovery.httpUrl }} / {{ disc.discovery.wsUrl }}
           </n-alert>
           <n-alert v-else-if="disc" type="warning" title="暂未连接到 QQ 协议端">
-            请确认 SnowLuma（或其它 OneBot v11 实现）已启动并登录 QQ。可以先跳过，稍后在「设置」中修改。
-            <ul style="margin: 6px 0 0; padding-left: 18px; font-size: 12px">
-              <li v-for="t in disc.discovery?.tried ?? []" :key="t.source">{{ t.source }} {{ t.url }}：{{ t.error }}</li>
+            <template v-if="!disc.homeValid">
+              没找到 SnowLuma 的安装目录，只能试默认地址。请先启动 SnowLuma 并登录 QQ 再点「重新探测」（运行中的 SnowLuma 能被自动找到），或者在下面填写 SnowLuma 目录，端口和 token 会从它的配置里读取。
+            </template>
+            <template v-else>
+              找到了 SnowLuma 目录，但它的端口没有响应。请确认 SnowLuma 已启动并登录 QQ。
+            </template>
+            <div style="font-size: 12px; margin-top: 6px">试过的地址：</div>
+            <ul style="margin: 2px 0 0; padding-left: 18px; font-size: 12px">
+              <li v-for="t in disc.discovery?.tried ?? []" :key="t.source + t.url">
+                {{ t.source === 'config' ? '配置里的地址' : `SnowLuma 账号 ${t.source.slice(9)} 的配置` }} {{ t.url }}：{{ t.error }}
+              </li>
             </ul>
+            <div v-if="disc.discovery?.accounts?.length" style="font-size: 12px; margin-top: 4px">
+              SnowLuma 配置里的端口：<span v-for="a in disc.discovery.accounts" :key="a.uin">{{ a.uin }}（HTTP {{ a.http?.port ?? '无' }} / WS {{ a.ws?.port ?? '无' }}） </span>
+            </div>
+            <div style="font-size: 12px; margin-top: 4px">也可以先跳过，之后在「设置」里修改。</div>
           </n-alert>
         </n-spin>
         <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="110" style="margin-top: 16px">
@@ -79,6 +93,10 @@ onMounted(() => { if (state.setupRequired) runDiscover(); });
           <n-form-item label="WS 地址"><n-input v-model:value="form.wsUrl" placeholder="留空自动发现，如 ws://127.0.0.1:3001" /></n-form-item>
           <n-form-item label="HTTP 地址"><n-input v-model:value="form.httpUrl" placeholder="留空自动发现，如 http://127.0.0.1:3000" /></n-form-item>
           <n-form-item label="Access Token"><n-input v-model:value="form.accessToken" type="password" show-password-on="click" placeholder="留空自动从 SnowLuma 配置读取" /></n-form-item>
+          <n-form-item label="自动连接">
+            <n-switch v-model:value="form.autoConnect" />
+            <n-text depth="3" style="font-size: 12px; margin-left: 10px">开启后 QAB 启动时自动连接 QQ、断开自动重连；关闭时在控制台仪表盘手动启动。完成设置时会先连接一次</n-text>
+          </n-form-item>
         </n-form>
         <n-space justify="end">
           <n-button @click="runDiscover" :loading="discovering">重新探测</n-button>

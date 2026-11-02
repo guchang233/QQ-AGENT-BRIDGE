@@ -58,10 +58,24 @@ async function main() {
       const { config } = loadConfig();
       const ob = config.onebot;
       const r = await discover({ httpUrl: ob.httpUrl, wsUrl: ob.wsUrl, httpToken: ob.httpToken || ob.accessToken, wsToken: ob.accessToken, snowlumaHome: ob.snowlumaHome });
-      console.log(`SnowLuma 目录：${ob.snowlumaHome || '（未找到）'}`);
+      console.log(`SnowLuma 目录：${ob.snowlumaHome || '（未找到，可在控制台「设置」里填写）'}`);
       console.log(`账号配置：${r.accounts.map((a) => a.uin).join(', ') || '无'}`);
-      for (const t of r.tried) console.log(`  ${t.error ? '✗' : '✓'} ${t.source} ${t.url}${t.error ? `  ${t.error}` : ''}`);
-      console.log(r.ok ? `已连接：${r.self?.nickname}(${r.self?.user_id})  WS=${r.wsUrl}` : 'OneBot 不可用：请确认 SnowLuma 已启动并登录 QQ');
+      console.log('协议端探测（本命令临时连接测试，不代表机器人已连接）：');
+      for (const t of r.tried) console.log(`  ${t.error ? '✗' : '✓'} ${t.source === 'config' ? '配置文件里的地址' : `SnowLuma 账号 ${t.source.slice(9)}`} ${t.url}${t.error ? `  ${t.error}` : ''}`);
+      console.log(r.ok ? `  可用：${r.self?.nickname}(${r.self?.user_id})  WS=${r.wsUrl}` : '  不可用：请确认 SnowLuma 已启动并登录 QQ，端口与上面列出的一致');
+      // 守护进程的真实状态
+      const t = config.agents.tokens.find((x) => x.enabled);
+      const base = `http://127.0.0.1:${config.server.port}`;
+      let daemon = '';
+      try {
+        const res = await fetch(`${base}/api/agent/status`, { headers: { authorization: `Bearer ${t?.token ?? ''}` }, signal: AbortSignal.timeout(3000) });
+        const s: any = res.ok ? await res.json() : null;
+        daemon = !s ? `无法读取（HTTP ${res.status}）`
+          : s.connection === 'open' ? `已连接 ${s.self?.nickname ?? ''}(${s.self?.userId ?? ''})`
+          : s.running ? `正在连接${s.lastError ? `（${s.lastError}）` : ''}`
+          : `未启动机器人：打开控制台 ${base} 点击启动${s.autoConnect ? '' : '（想开机即连可在「设置」开启自动连接）'}`;
+      } catch { daemon = '没有运行（用 start.bat 或 qab start 启动）'; }
+      console.log(`守护进程：${daemon}`);
       process.exit(r.ok ? 0 : 1);
     }
     case 'update': {

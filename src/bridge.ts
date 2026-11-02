@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { type Config, loadConfig, saveConfig, resolveFromRoot, type Tier } from './config.ts';
+import { type Config, loadConfig, saveConfig, resolveFromRoot, guessSnowLumaHome, hasOneBotConfig, type Tier } from './config.ts';
 import { OneBotClient, OneBotError } from './onebot/client.ts';
 import { discover, type DiscoverResult } from './onebot/discover.ts';
 import { actionTier, getAction } from './onebot/catalog.ts';
@@ -66,7 +66,7 @@ export class Bridge extends EventEmitter {
     this.config = config ?? loadConfig().config;
     this.dataDir = resolveFromRoot(this.config.dataDir);
     this.store = new Store(this.dataDir);
-    const ob = this.config.onebot;
+    let ob = this.config.onebot;
     this.bot = new OneBotClient(
       { wsUrl: ob.wsUrl, wsToken: ob.accessToken, httpUrl: ob.httpUrl, httpToken: ob.httpToken || ob.accessToken },
       { timeoutMs: ob.actionTimeoutMs, reconnectMaxMs: ob.reconnectMaxMs, autoReconnect: () => this.config.bot.autoReconnect },
@@ -148,7 +148,15 @@ export class Bridge extends EventEmitter {
   }
 
   async rediscover() {
-    const ob = this.config.onebot;
+    let ob = this.config.onebot;
+    if (ob.autoDiscover && !hasOneBotConfig(ob.snowlumaHome)) {
+      const guess = guessSnowLumaHome();
+      if (guess && guess !== ob.snowlumaHome) {
+        log.info(`找到 SnowLuma：${guess}`);
+        this.updateConfig({ ...this.config, onebot: { ...ob, snowlumaHome: guess } });
+        ob = this.config.onebot;
+      }
+    }
     if (ob.autoDiscover) {
       this.discovery = await discover({ httpUrl: ob.httpUrl, wsUrl: ob.wsUrl, httpToken: ob.httpToken || ob.accessToken, wsToken: ob.accessToken, snowlumaHome: ob.snowlumaHome });
       const d = this.discovery;

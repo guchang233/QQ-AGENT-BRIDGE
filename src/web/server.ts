@@ -9,7 +9,7 @@ import type { WebSocket } from 'ws';
 import type { Bridge } from '../bridge.ts';
 import type { PluginHost } from '../plugins/host.ts';
 import { CONSOLE_CALLER } from '../policy.ts';
-import { ConfigSchema, ROOT, TIERS, type Config } from '../config.ts';
+import { ConfigSchema, ROOT, TIERS, guessSnowLumaHome, hasOneBotConfig, type Config } from '../config.ts';
 import { handleMcpHttp, mcpSessions, toolsFor, callToolStateless } from '../mcp/server.ts';
 import { buildTools } from '../mcp/tools.ts';
 import { extraTools } from '../mcp/server.ts';
@@ -17,7 +17,7 @@ import { searchActions, ACTIONS, actionTier } from '../onebot/catalog.ts';
 import { parseConv, convKey } from '../message/segments.ts';
 import { logHub, createLogger } from '../util/log.ts';
 import { randomToken, guessMime, MIME_EXT, sha256, atomicWrite, isInsideRoots } from '../util/fs.ts';
-import { readSnowLumaAccounts } from '../onebot/discover.ts';
+import { readSnowLumaAccounts, discover } from '../onebot/discover.ts';
 
 const log = createLogger('web');
 const COOKIE = 'qab_session';
@@ -56,8 +56,15 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   app.post('/api/agent/call', async (req, reply) => {
     const caller = agentCaller(req);
     if (!caller) return reply.code(401).send({ error: '无效的 agent token' });
-    const b = (req.body ?? {}) as { name?: string; arguments?: unknown };
-    return callToolStateless(bridge, caller, String(b.name ?? ''), b.arguments);
+    // 请求体与 MCP 的 tools/call 一致：{ name, arguments }；也接受 args
+    const b = (req.body ?? {}) as { name?: string; arguments?: unknown; args?: unknown };
+    return callToolStateless(bridge, caller, String(b.name ?? ''), b.arguments ?? b.args);
+  });
+  /** 守护进程的真实连接状态（qab status 用） */
+  app.get('/api/agent/status', async (req, reply) => {
+    if (!agentCaller(req)) return reply.code(401).send({ error: '无效的 agent token' });
+    const s = bridge.status();
+    return { connection: s.connection, running: s.running, self: s.self, lastError: s.lastError, endpoint: s.endpoint, autoConnect: bridge.config.bot.autoConnect };
   });
 
   // ------------------------------------------------------------------ 鉴权
@@ -81,27 +88,39 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   app.post('/api/logout', async (_req, reply) => { reply.header('set-cookie', `${COOKIE}=; Path=/; Max-Age=0`); return { ok: true }; });
 
   // 首次设置向导（仅在未设置密码时可用）
-  app.get('/api/setup/discover', async (_req, reply) => {
+  // 向导里填的目录/地址先用来探测，不写入配置；完成设置时才保存
+  app.post('/api/setup/discover', async (req, reply) => {
     if (!needsSetup()) return reply.code(403).send({ error: '已完成设置' });
-    const d = await bridge.rediscover();
-    return { discovery: d && { ...d, wsToken: undefined, httpToken: undefined, accounts: d.accounts.map((a) => ({ uin: a.uin, http: a.http && { ...a.http, token: a.http.token ? '***' : '' }, ws: a.ws && { ...a.ws, token: a.ws.token ? '***' : '' } })) }, snowlumaHome: bridge.config.onebot.snowlumaHome, status: bridge.status() };
+    const b = (req.body ?? {}) as { snowlumaHome?: string; wsUrl?: string; httpUrl?: string; accessToken?: string };
+    const ob = bridge.config.onebot;
+    const home = b.snowlumaHome?.trim() || ob.snowlumaHome || guessSnowLumaHome();
+    const token = b.accessToken || ob.accessToken;
+    const d = await discover({ httpUrl: b.httpUrl?.trim() || ob.httpUrl, wsUrl: b.wsUrl?.trim() || ob.wsUrl, httpToken: b.accessToken || ob.httpToken || token, wsToken: token, snowlumaHome: home });
+    return {
+      discovery: { ...d, wsToken: undefined, httpToken: undefined, accounts: d.accounts.map((a) => ({ uin: a.uin, http: a.http && { host: a.http.host, port: a.http.port }, ws: a.ws && { host: a.ws.host, port: a.ws.port } })) },
+      snowlumaHome: home, homeValid: hasOneBotConfig(home),
+    };
   });
   app.post('/api/setup', async (req, reply) => {
     if (!needsSetup()) return reply.code(403).send({ error: '已完成设置' });
-    const b = (req.body ?? {}) as { password?: string; owners?: string[]; snowlumaHome?: string; wsUrl?: string; httpUrl?: string; accessToken?: string; accessMode?: 'all' | 'allowlist' };
+    const b = (req.body ?? {}) as { password?: string; owners?: string[]; snowlumaHome?: string; wsUrl?: string; httpUrl?: string; accessToken?: string; accessMode?: 'all' | 'allowlist'; autoConnect?: boolean };
     if (!b.password || b.password.length < 6) return reply.code(400).send({ error: '密码至少 6 位' });
     const cfg = structuredClone(bridge.config);
     cfg.server.consolePassword = b.password;
     if (b.owners) cfg.owners = b.owners.map(String).filter(Boolean);
-    if (b.snowlumaHome !== undefined) cfg.onebot.snowlumaHome = b.snowlumaHome;
-    if (b.wsUrl) cfg.onebot.wsUrl = b.wsUrl;
-    if (b.httpUrl) cfg.onebot.httpUrl = b.httpUrl;
-    if (b.accessToken !== undefined) cfg.onebot.accessToken = b.accessToken;
+    if (b.snowlumaHome?.trim()) cfg.onebot.snowlumaHome = b.snowlumaHome.trim();
+    if (b.wsUrl?.trim()) cfg.onebot.wsUrl = b.wsUrl.trim();
+    if (b.httpUrl?.trim()) cfg.onebot.httpUrl = b.httpUrl.trim();
+    // 留空表示不修改：不能把已有的 token 清掉
+    if (b.accessToken) cfg.onebot.accessToken = b.accessToken;
     if (b.accessMode) cfg.access.mode = b.accessMode;
+    if (b.autoConnect !== undefined) cfg.bot.autoConnect = cfg.bot.autoReconnect = !!b.autoConnect;
     bridge.updateConfig(cfg);
-    await bridge.rediscover();
+    // 在向导里点了完成，就是要用：探测到协议端就直接启动机器人
+    const d = await bridge.rediscover();
+    if (d?.ok) await bridge.connect().catch(() => {});
     setCookie(reply);
-    return { ok: true };
+    return { ok: true, connected: bridge.status().connection === 'open' };
   });
 
   /** 控制台是直接从磁盘读的，后端却要重启才更新：文件比进程新时提示重启，避免新页面配旧后端。 */
@@ -136,7 +155,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
 
   // ------------------------------------------------------------------ 会话与消息
   app.get('/api/conversations', async () => bridge.store.conversations().map((c) => ({ ...c, name: c.name || bridge.convName(c.conv), allowed: bridge.policy.convAllowed(parseConv(c.conv)) })));
-  app.get('/api/contacts', async () => ({ groups: [...bridge.groups.values()], friends: [...bridge.friends.values()] }));
+  app.get('/api/contacts', async () => ({ groups: [...bridge.groups.values()], friends: [...bridge.friends.values()].map((f: any) => ({ ...f, name: f.remark || f.nickname })) }));
   app.get('/api/conv/:conv/messages', async (req) => {
     const { conv } = req.params as { conv: string };
     const q = req.query as { before?: string; limit?: string; server?: string };

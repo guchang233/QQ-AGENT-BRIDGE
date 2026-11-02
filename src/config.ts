@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import YAML from 'yaml';
 import { z } from 'zod';
 import { atomicWrite, randomToken } from './util/fs.ts';
@@ -210,20 +211,72 @@ export function saveConfig(config: Config, file = CONFIG_PATH) {
   atomicWrite(file, doc.toString({ lineWidth: 0 }));
 }
 
-/** 在常见位置寻找 SnowLuma 安装目录（含 config/onebot_*.json）。 */
+/**
+ * 寻找 SnowLuma 安装目录（含 config/onebot_*.json）：
+ *   1. 环境变量、程序所在目录的上级
+ *   2. 正在运行的 SnowLuma 进程（装在哪都能找到，前提是它已启动）
+ *   3. 各磁盘根目录下两层内名字含 snowluma 的目录（如 D:\QQBot\SnowLuma）
+ */
 export function guessSnowLumaHome(): string {
-  const candidates = [...new Set([process.env.SNOWLUMA_HOME, path.resolve(HOME, '..'), path.resolve(ROOT, '..'), process.cwd()].filter(Boolean) as string[])];
-  for (const base of candidates) {
+  const near = [process.env.SNOWLUMA_HOME, path.resolve(HOME, '..'), path.resolve(ROOT, '..'), process.cwd()].filter(Boolean) as string[];
+  const found = searchUnder(near, 1);
+  if (found) return found;
+  for (const p of runningProcessPaths()) {
+    for (let d = path.dirname(p), i = 0; i < 4 && d !== path.dirname(d); d = path.dirname(d), i++) if (hasOneBotConfig(d)) return d;
+  }
+  return searchUnder(driveRoots(), 2);
+}
+
+/** 在 bases 本身及其下 depth 层内找名字含 snowluma 的安装目录 */
+function searchUnder(bases: string[], depth: number): string {
+  for (const base of [...new Set(bases)]) {
     if (hasOneBotConfig(base)) return base;
-    try {
-      for (const e of fs.readdirSync(base, { withFileTypes: true })) {
-        if (e.isDirectory() && /snowluma/i.test(e.name) && hasOneBotConfig(path.join(base, e.name))) return path.join(base, e.name);
+    if (depth <= 0) continue;
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(base, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (!e.isDirectory() || /^(\$|windows$|program ?data$|system volume)/i.test(e.name)) continue;
+      const sub = path.join(base, e.name);
+      if (/snowluma/i.test(e.name) && hasOneBotConfig(sub)) return sub;
+      if (depth > 1) {
+        try {
+          for (const e2 of fs.readdirSync(sub, { withFileTypes: true })) {
+            if (e2.isDirectory() && /snowluma/i.test(e2.name) && hasOneBotConfig(path.join(sub, e2.name))) return path.join(sub, e2.name);
+          }
+        } catch { /* 无权限的目录跳过 */ }
       }
-    } catch { /* ignore */ }
+    }
   }
   return '';
 }
 
-function hasOneBotConfig(dir: string) {
+function driveRoots(): string[] {
+  if (process.platform !== 'win32') return [os.homedir(), '/opt', '/srv'];
+  return 'CDEFGHIJ'.split('').map((d) => d + ':' + path.sep).filter((d) => { try { fs.accessSync(d); return true; } catch { return false; } });
+}
+
+/** 命令行或可执行文件路径里带 snowluma 的进程，返回其中出现的路径 */
+export function runningProcessPaths(): string[] {
+  const LF = String.fromCharCode(10), NUL = String.fromCharCode(0);
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync(path.join(process.env.SystemRoot ?? 'C:/Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command',
+        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'snowluma' -or $_.ExecutablePath -match 'snowluma' } | ForEach-Object { $_.ExecutablePath; $_.CommandLine }"],
+      { encoding: 'utf8', timeout: 8000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+      // 引号里的整段路径，或不带引号时按空格切开的片段
+      return out.split(LF).flatMap((l) => l.split('"')).flatMap((x) => [x, ...x.split(' ')]).map((x) => x.trim()).filter((x) => /^[A-Za-z]:/.test(x));
+    }
+    const out: string[] = [];
+    for (const pid of fs.readdirSync('/proc').filter((x) => /^[0-9]+$/.test(x))) {
+      try {
+        const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split(NUL);
+        if (cmd.some((c) => /snowluma/i.test(c))) out.push(...cmd.filter((c) => c.startsWith('/')), path.join(fs.readlinkSync(`/proc/${pid}/cwd`), 'x'));
+      } catch { /* 进程已退出 */ }
+    }
+    return out;
+  } catch { return []; }
+}
+
+export function hasOneBotConfig(dir: string) {
   try { return fs.readdirSync(path.join(dir, 'config')).some((f) => /^onebot_\d+\.json$/i.test(f)); } catch { return false; }
 }
