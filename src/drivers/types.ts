@@ -37,6 +37,8 @@ export interface DriverStatus {
   detail: string;
   /** 正在运行回合的会话 */
   busy: string[];
+  /** 每个忙碌会话在做什么、等了多久（控制台显示用） */
+  running?: { conv: string; since: number; step: string; lastProgressAt: number }[];
   sessions: number;
 }
 

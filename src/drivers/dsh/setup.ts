@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
 import type { Bridge } from '../../bridge.ts';
 import { ROOT, HOME } from '../../config.ts';
 import { randomToken } from '../../util/fs.ts';
@@ -35,7 +36,7 @@ export const DSH_TOOLS = [
 
 export interface SetupStatus {
   dshHome: string; profile: string; profileDir: string; profileExists: boolean;
-  mcpRegistered: boolean; bundleRegistered: boolean; bundleLinked: boolean;
+  mcpRegistered: boolean; mcpProblem: string; bundleRegistered: boolean; bundleLinked: boolean;
   qqBridgeDetected: boolean; tokenReady: boolean;
 }
 
@@ -61,13 +62,44 @@ function paths(bridge: Bridge) {
 
 const NL = String.fromCharCode(10);
 const slash = (p: string) => p.split(path.sep).join('/');
-/** 去掉本项目在 cordis.patch.yml 中的标记区块（只动自己的区块）。 */
-function withoutBlock(text: string): string {
-  const a = text.indexOf(BEGIN);
-  if (a < 0) return text;
-  const b = text.indexOf(END, a);
-  if (b < 0) return text;
-  return text.slice(0, a) + text.slice(b + END.length).replace(/^\r?\n/, '');
+const MCP_ID = 'mcp-qab';
+const OWN_COMMENT = '# 由 QQ-Agent Bridge 维护';
+
+/** cordis.patch.yml 里本项目 MCP 条目（id: mcp-qab）的个数；解析失败返回 -1 */
+export function countOwnMcp(text: string): number {
+  if (!text.trim()) return 0;
+  try {
+    const v = YAML.parse(text);
+    if (!Array.isArray(v)) return 0;
+    return v.flatMap((it: any) => (Array.isArray(it?.insert) ? it.insert : [])).filter((x: any) => x?.id === MCP_ID).length;
+  } catch { return -1; }
+}
+
+/**
+ * 去掉本项目在 cordis.patch.yml 中的所有痕迹（只动自己的条目）：
+ *   1. 完整的 BEGIN…END 区块
+ *   2. 残留的单个标记行（写回中断、手工编辑导致只剩 BEGIN 或 END）
+ *   3. 标记之外的 id: mcp-qab 条目（按 YAML 结构删除，insert 清空后连同父节点删除）
+ */
+export function withoutBlock(text: string): string {
+  let s = text;
+  for (let a = s.indexOf(BEGIN); a >= 0; a = s.indexOf(BEGIN)) {
+    const b = s.indexOf(END, a);
+    if (b < 0) break;
+    s = s.slice(0, a) + s.slice(b + END.length).replace(/^\r?\n/, '');
+  }
+  s = s.split(NL).filter((l) => { const t = l.trim(); return t !== BEGIN && t !== END && !t.startsWith(OWN_COMMENT); }).join(NL);
+  if (countOwnMcp(s) <= 0) return s;
+  const doc = YAML.parseDocument(s);
+  const seq: any = doc.contents;
+  if (!YAML.isSeq(seq)) return s;
+  seq.items = seq.items.filter((item: any) => {
+    const ins = YAML.isMap(item) ? item.get('insert') : null;
+    if (!YAML.isSeq(ins)) return true;
+    (ins as any).items = (ins as any).items.filter((x: any) => !(YAML.isMap(x) && x.get('id') === MCP_ID));
+    return (ins as any).items.length > 0 || (item as any).items.length > 1;
+  });
+  return doc.toString({ lineWidth: 0 });
 }
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 function backup(file: string) { if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak-qab-${stamp()}`); }
@@ -87,9 +119,15 @@ export function dshSetupStatus(bridge: Bridge): SetupStatus {
   const patch = fs.existsSync(p.patchFile) ? fs.readFileSync(p.patchFile, 'utf8') : '';
   let pkg: any = {};
   try { pkg = JSON.parse(fs.readFileSync(p.pkgFile, 'utf8')); } catch { /* ignore */ }
+  const n = countOwnMcp(patch);
+  const markers = patch.includes(BEGIN) && patch.includes(END);
   return {
     dshHome: p.home, profile: path.basename(p.profileDir), profileDir: p.profileDir, profileExists: fs.existsSync(p.profileDir),
-    mcpRegistered: patch.includes(BEGIN),
+    mcpRegistered: n === 1 && markers,
+    mcpProblem: n < 0 ? 'cordis.patch.yml 不是合法的 YAML，DSH 可能读不了它'
+      : n > 1 ? `MCP 服务「${MCP_SERVER_NAME}」注册了 ${n} 份，点「重新接入」会清理成一份`
+      : n === 1 && !markers ? 'MCP 注册的标记不完整，点「重新接入」会修复'
+      : !n && (patch.includes(BEGIN) || patch.includes(END)) ? '有残留的注册标记，点「重新接入」会清理' : '',
     bundleRegistered: (pkg?.dsh?.profile?.bundles ?? []).includes(BUNDLE_NAME),
     bundleLinked: fs.existsSync(path.join(p.nmLink, 'package.json')),
     qqBridgeDetected: patch.includes('mcp-snowluma') || (pkg?.dsh?.profile?.bundles ?? []).includes('qq-agent-presets'),
@@ -189,7 +227,10 @@ export async function installDsh(bridge: Bridge): Promise<{ steps: string[]; res
     '        toolCallTimeoutMs: 1900000',
     END,
   ].join(NL);
-  fs.writeFileSync(p.patchFile, withoutBlock(old).trimEnd() + (old.trim() ? NL : '') + block + NL);
+  const rest = withoutBlock(old).trimEnd();
+  const next = rest + (rest ? NL : '') + block + NL;
+  if (countOwnMcp(next) !== 1) throw new Error('写入 cordis.patch.yml 后校验失败（MCP 条目不是恰好一份），已保留备份，未做修改');
+  fs.writeFileSync(p.patchFile, next);
   steps.push(`在 cordis.patch.yml 注册 MCP 服务「${MCP_SERVER_NAME}」`);
 
   // 4. 安装并启用 bundle：DSH 运行中 → 走 DSH 自己的插件管理器（自带 pnpm，与设置页「插件管理」同一路径）
@@ -240,7 +281,7 @@ export async function uninstallDsh(bridge: Bridge): Promise<string[]> {
   }
   if (fs.existsSync(p.patchFile)) {
     const old = fs.readFileSync(p.patchFile, 'utf8');
-    if (old.includes(BEGIN)) {
+    if (old.includes(BEGIN) || old.includes(END) || countOwnMcp(old) > 0) {
       backup(p.patchFile);
       fs.writeFileSync(p.patchFile, withoutBlock(old).trimEnd() + NL);
       steps.push('已从 cordis.patch.yml 移除 MCP 区块');

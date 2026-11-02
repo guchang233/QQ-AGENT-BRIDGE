@@ -18,6 +18,8 @@ import { isPrivateIp } from '../src/util/safe-fetch.ts';
 import { Policy } from '../src/policy.ts';
 import { ConfigSchema } from '../src/config.ts';
 import { DshDriver } from '../src/drivers/dsh/driver.ts';
+import { withoutBlock, countOwnMcp } from '../src/drivers/dsh/setup.ts';
+import { EventEmitter } from 'node:events';
 
 describe('消息 DSL', () => {
   const face = (s: string) => (s === '微笑' ? 14 : /^\d+$/.test(s) ? Number(s) : undefined);
@@ -316,5 +318,135 @@ describe('DSH 模型选择', () => {
     await d.ensureChatModel('s1');
     expect(calls.find((c) => c[0] === 'session/selectModel')[1]).toMatchObject({ provider: 'magpie', model: 'workbuddy/hy4-preview', reasoningEffort: 'high' });
     expect(d.modelWarning).toBe('');
+  });
+});
+
+describe('DSH 回合卡住与模型失败', () => {
+  const make = (dsh: any = {}) => {
+    const calls: any[] = [];
+    const acts: any[] = [];
+    const ends: any[] = [];
+    const d: any = Object.create(DshDriver.prototype);
+    Object.assign(d, {
+      bridge: { config: { drivers: { dsh: { provider: 'p', model: 'm', reasoningEffort: 'high', stallMinutes: 5, ...dsh } } }, activity: (a: any) => acts.push(a), store: { db: { prepare: () => ({ get: () => ({}) }) } } },
+      client: { call: async (m: string, p: any) => { calls.push([m, p]); if (m === 'session/modelCatalog') throw new Error('旧版 DSH'); if (m === 'session/selectModel') throw new Error('session/selectModel 失败：session/model-unavailable Select an available model before sending a message.'); return {}; } },
+      sessions: new Map([['group:1', { sessionId: 's1', preset: 'qab-qq', model: 'm', created: 0 }]]),
+      convOf: new Map([['s1', 'group:1']]), turns: new Map(), busyUntil: new Map(), queuedAt: new Map(), abortedSids: new Set(),
+      lastModel: new Map(), modelApplied: new Map(), catalogCache: null, modelWarning: '', modelError: '', state: 'ready', detail: '',
+      _events: undefined,
+    });
+    EventEmitter.call(d);
+    d.on('turn-end', (conv: string, r: any) => ends.push([conv, r]));
+    return { d, calls, acts, ends };
+  };
+  it('模型设置失败时拒绝唤醒，不把消息送进没有模型的会话', async () => {
+    const { d, calls, acts } = make();
+    d.cfg.preset = 'qab-qq';
+    await expect(d.ensureSession('group:1')).rejects.toMatchObject({ code: 'model' });
+    expect(calls.some((c) => c[0] === 'session/prompt')).toBe(false);
+    expect(d.status().state).toBe('error');
+    expect(d.status().detail).toContain('model-unavailable');
+    expect(acts.filter((a) => a.level === 'error')).toHaveLength(1);
+    await expect(d.ensureSession('group:1')).rejects.toMatchObject({ code: 'model' });
+    expect(acts.filter((a) => a.level === 'error')).toHaveLength(1); // 只提示一次
+  });
+  it('长时间没有进展的回合自动结束，DSH 之后补发的 turn/end 不重复处理', async () => {
+    const { d, calls, ends } = make();
+    const t0 = Date.now();
+    d.onEvent('s1', { type: 'turn/start', data: { turn: 1 } });
+    d.busyUntil.set('group:1', t0 + 15 * 60_000);
+    d.onEvent('s1', { type: 'tool/call', data: { name: 'mcp__qq__qq_send' } });
+    expect(d.status().running[0]).toMatchObject({ conv: 'group:1', step: '调用工具 qq_send' });
+    d.checkStalled(t0 + 4 * 60_000);
+    expect(ends).toHaveLength(0);
+    d.checkStalled(t0 + 6 * 60_000);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.some((c) => c[0] === 'session/cancel')).toBe(true);
+    expect(ends).toHaveLength(1);
+    expect(ends[0][1].reason).toBe('timeout');
+    expect(d.status().busy).toEqual([]);
+    d.onEvent('s1', { type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted' } } });
+    expect(ends).toHaveLength(1);
+  });
+  it('提交后 DSH 一直不开始处理，也会释放', async () => {
+    const { d, ends } = make();
+    const t0 = Date.now();
+    d.queuedAt.set('group:1', t0);
+    d.busyUntil.set('group:1', t0 + 15 * 60_000);
+    expect(d.status().running[0].step).toBe('等 DSH 开始处理');
+    d.checkStalled(t0 + 6 * 60_000);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ends).toHaveLength(1);
+    expect(d.status().busy).toEqual([]);
+  });
+});
+
+describe('DSH 接入：cordis.patch.yml 清理', () => {
+  const other = ['# 别人的配置', '- id: ui-skin-xp', '  disabled: true', '- insert:', '    - id: rea-mcp', '      name: x', '      config:', '        serverName: rea'].join(String.fromCharCode(10));
+  const ours = (begin = true, end = true) => [
+    ...(begin ? ['# === qq-agent-bridge MCP BEGIN ==='] : []),
+    '# 由 QQ-Agent Bridge 维护；整段会被替换，请勿手工编辑内部条目。',
+    '- insert:', '    - id: mcp-qab', '      name: y', '      config:', '        serverName: qq',
+    ...(end ? ['# === qq-agent-bridge MCP END ==='] : []),
+  ].join(String.fromCharCode(10));
+  const NL = String.fromCharCode(10);
+  it('正常区块整段移除，别人的条目和注释保留', () => {
+    const out = withoutBlock(other + NL + ours());
+    expect(countOwnMcp(out)).toBe(0);
+    expect(out).toContain('rea-mcp');
+    expect(out).toContain('# 别人的配置');
+    expect(out).not.toContain('qq-agent-bridge MCP');
+  });
+  it('只剩 END（BEGIN 丢失）且重复注册时全部清掉', () => {
+    const broken = other + NL + ours(false, true) + NL + ours(false, true);
+    expect(countOwnMcp(broken)).toBe(2);
+    const out = withoutBlock(broken);
+    expect(countOwnMcp(out)).toBe(0);
+    expect(out).toContain('rea-mcp');
+    expect(out).not.toContain('MCP END');
+  });
+  it('和别人的 MCP 写在同一个 insert 里时只删自己那条', () => {
+    const mixed = ['- insert:', '    - id: rea-mcp', '      name: x', '    - id: mcp-qab', '      name: y'].join(NL);
+    const out = withoutBlock(mixed);
+    expect(countOwnMcp(out)).toBe(0);
+    expect(out).toContain('rea-mcp');
+  });
+});
+
+describe('会话令牌', () => {
+  const make = () => {
+    const cfg = ConfigSchema.parse({ server: { sessionSecret: 'secret-a' } });
+    const p = new Policy(() => cfg);
+    p.knownConvs = () => ['group:111', 'private:222'];
+    return { p, cfg };
+  };
+  it('短码稳定、可校验，常见的抄写变形也能认', () => {
+    const { p } = make();
+    const t = p.issueConvToken('group:111');
+    expect(t).toMatch(/^ct_[a-z2-9]{10}$/);
+    expect(p.issueConvToken('group:111')).toBe(t);
+    for (const v of [t, ` ${t} `, `"${t}"`, `\`${t}\``, `【${t}】`, t.toUpperCase(), t.slice(3)]) expect(p.checkConvToken(v)).toEqual({ conv: 'group:111' });
+  });
+  it('重启后（内存映射为空）靠已知会话列表重算', () => {
+    const { p, cfg } = make();
+    const t = p.issueConvToken('private:222');
+    const fresh = new Policy(() => cfg);
+    fresh.knownConvs = () => ['group:111', 'private:222'];
+    expect(fresh.checkConvToken(t)).toEqual({ conv: 'private:222' });
+  });
+  it('失败时说明原因', () => {
+    const { p } = make();
+    expect((p.checkConvToken(undefined) as any).error).toContain('缺少');
+    expect((p.checkConvToken('group:111') as any).error).toContain('会话 ID');
+    expect((p.checkConvToken('ct_abc') as any).error).toContain('格式不对');
+    expect((p.checkConvToken('ct_' + 'k'.repeat(10)) as any).error).toContain('对不上');
+  });
+  it('换了密钥后旧令牌失效；旧的长格式仍然接受', () => {
+    const { p, cfg } = make();
+    const t = p.issueConvToken('group:111');
+    const legacy = 'ct_' + Buffer.from('group:111').toString('base64url') + '.' + (p as any).sign('group:111');
+    expect(p.checkConvToken(legacy)).toEqual({ conv: 'group:111' });
+    cfg.server.sessionSecret = 'secret-b';
+    expect('error' in p.checkConvToken(t)).toBe(true);
   });
 });

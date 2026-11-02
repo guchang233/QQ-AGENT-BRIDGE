@@ -40,24 +40,65 @@ class SlidingWindow {
   add(now = Date.now()) { this.hits.push(now); }
 }
 
+/** 会话令牌短码：小写字母与数字，去掉 l o 0 1 这些容易看错的字符 */
+const CT_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789';
+const CT_LEN = 10;
+
 export class Policy extends EventEmitter {
   private minute = new SlidingWindow(60_000);
   private hour = new SlidingWindow(3_600_000);
   private convMinute = new Map<string, SlidingWindow>();
   approvals = new Map<string, Approval & { resolve: (ok: boolean) => void }>();
   /**
-   * 会话令牌（驱动签发，供 sessionBound token 使用）：ct_<会话 base64url>.<HMAC 签名>。
-   * 无状态、跨重启稳定（DSH 会话上下文里的旧令牌在守护进程重启后依然有效），且无法伪造。
+   * 会话令牌（驱动签发，供 sessionBound token 使用）：ct_ 加 10 位短码，短码由 HMAC(会话) 算出。
+   * 同一会话永远是同一个码，跨重启稳定；没有密钥算不出别的会话的码。
+   * 短码只用小写字母和数字，去掉了 l、o、0、1 这类容易抄错的字符，模型更容易原样抄对。
+   * 旧的长格式 ct_<base64url>.<签名> 仍然接受（DSH 会话上下文里可能还留着）。
    */
   private sign(conv: string) { return createHmac('sha256', this.cfg().server.sessionSecret).update(`conv:${conv}`).digest('base64url').slice(0, 16); }
-  issueConvToken(conv: string): string { return `ct_${Buffer.from(conv).toString('base64url')}.${this.sign(conv)}`; }
-  resolveConvToken(t: string): string | undefined {
-    const m = /^ct_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{16})$/.exec(String(t).trim());
-    if (!m) return undefined;
-    const conv = Buffer.from(m[1], 'base64url').toString();
-    const a = Buffer.from(this.sign(conv)); const b = Buffer.from(m[2]);
-    return a.length === b.length && timingSafeEqual(a, b) ? conv : undefined;
+  private shortCode(conv: string) {
+    const h = createHmac('sha256', this.cfg().server.sessionSecret).update(`ct:${conv}`).digest();
+    return [...h.subarray(0, CT_LEN)].map((b) => CT_ALPHABET[b % CT_ALPHABET.length]).join('');
   }
+  private codes = new Map<string, string>(); // 短码 -> 会话
+  private codesSecret = '';
+  /** 守护进程重启后内存映射为空：由 bridge 提供已知会话列表，按需重算 */
+  knownConvs: () => string[] = () => [];
+  issueConvToken(conv: string): string {
+    this.syncSecret();
+    const c = this.shortCode(conv);
+    this.codes.set(c, conv);
+    return `ct_${c}`;
+  }
+  private syncSecret() {
+    const s = this.cfg().server.sessionSecret;
+    if (s !== this.codesSecret) { this.codes.clear(); this.codesSecret = s; }
+  }
+  /** 校验会话令牌；失败时说明原因，模型才知道该怎么改 */
+  checkConvToken(raw: unknown): { conv: string } | { error: string } {
+    if (raw === undefined || raw === null || String(raw).trim() === '') return { error: '缺少 convToken 参数。请把唤醒提示里【会话令牌】的值原样填进 convToken' };
+    // 容忍常见的抄写变形：前后空白、引号、反引号、括号
+    const t = String(raw).trim().replace(/^[\s"'`【\[<(]+|[\s"'`】\]>)]+$/g, '');
+    const old = /^ct_([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{16})$/.exec(t);
+    if (old) {
+      const conv = Buffer.from(old[1], 'base64url').toString();
+      const a = Buffer.from(this.sign(conv)); const b = Buffer.from(old[2]);
+      return a.length === b.length && timingSafeEqual(a, b) ? { conv } : { error: 'convToken 对不上（可能抄错了几个字符）。请从唤醒提示的【会话令牌】重新复制' };
+    }
+    if (/^(group|private):/.test(t)) return { error: `convToken 填成了会话 ID「${t}」。convToken 要填唤醒提示里【会话令牌】的值（ct_ 开头），会话 ID 填在 conv 参数里` };
+    const code = t.toLowerCase().replace(/^ct[_-]?/, '');
+    if (code.length !== CT_LEN || [...code].some((ch) => !CT_ALPHABET.includes(ch))) {
+      return { error: `convToken 格式不对：应该是 ct_ 加 ${CT_LEN} 位小写字母和数字，形如 ct_${'k'.repeat(CT_LEN)}，你传的是「${t.slice(0, 40)}」。请从唤醒提示的【会话令牌】原样复制` };
+    }
+    this.syncSecret();
+    let conv = this.codes.get(code);
+    if (!conv) {
+      for (const c of this.knownConvs()) this.codes.set(this.shortCode(c), c);
+      conv = this.codes.get(code);
+    }
+    return conv ? { conv } : { error: 'convToken 对不上任何会话（可能抄错了字符，或用了别的会话的令牌）。请从这次唤醒提示的【会话令牌】重新复制' };
+  }
+  resolveConvToken(t: string): string | undefined { const r = this.checkConvToken(t); return 'conv' in r ? r.conv : undefined; }
 
   /** 把调用方收窄到单个会话（会话绑定 token 用）。 */
   narrow(caller: Caller, conv: ConvRef): Caller {

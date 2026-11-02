@@ -167,7 +167,8 @@ export default definePlugin({
         fire(conv, reason).catch((e) => {
           stopTyping(conv);
           ctx.logger.warn(`唤醒 ${conv} 失败：${e.message}`);
-          bridge.activity({ kind: 'error', level: 'error', conv, actor: 'DSH', title: '唤醒失败，1 分钟后重试', detail: e.message });
+          // 模型不可用时驱动已经提示过一次，不每分钟重复刷屏
+          if (e?.code !== 'model') bridge.activity({ kind: 'error', level: 'error', conv, actor: 'DSH', title: '唤醒失败，1 分钟后重试', detail: e.message });
           if (!s.pending) s.pending = { reason, dueAt: Date.now() + 60_000, since: Date.now() }; // 稍后重试，不丢唤醒
         }).finally(() => firing.delete(conv));
       }
@@ -206,7 +207,8 @@ export default definePlugin({
       const ver = roles.version(role) || role;
       const parts: string[] = [];
       parts.push(`【会话】${conv}（${oneLine(bridge.convName(conv), 60) || (conv.startsWith('group:') ? '群聊' : '私聊')}）`);
-      parts.push(`【会话令牌】${bridge.policy.issueConvToken(conv)}（每次调用 QQ 工具都传 convToken=此值；conv 参数填 ${conv}）`);
+      parts.push(`【会话令牌】${bridge.policy.issueConvToken(conv)}`);
+      parts.push(`（每次调用 QQ 工具都传 convToken="${bridge.policy.issueConvToken(conv)}"，原样复制上面这一行的值；conv 参数填 ${conv}）`);
       parts.push(`【你的身份】${self?.nickname ?? '?'}（QQ ${self?.userId ?? '?'}）。别人 @你、回复你、或叫 ${selfNames(conv).join(' / ') || '你的名字'} 都是在叫你。`);
       const owners = bridge.config.owners.map(String);
       const title = bridge.config.ownerTitle || '管理员';
@@ -293,7 +295,8 @@ export default definePlugin({
       const known = memory ? (await memory.contextFor(conv, msgs)).items : [];
       const prompt = [
         `【会话】${conv}（${oneLine(bridge.convName(conv), 60) || '聊天'}）`,
-        `【会话令牌】${bridge.policy.issueConvToken(conv)}（每次调用工具都传 convToken=此值）`,
+        `【会话令牌】${bridge.policy.issueConvToken(conv)}`,
+        `（每次调用工具都传 convToken="${bridge.policy.issueConvToken(conv)}"）`,
         `【后台整理记忆】这一轮不是聊天，没有人在等你回复，发消息的工具已被禁用。从下面的聊天记录里提炼值得长期记住的内容，用 qq_memory_remember 写入。
 - 只记关于人的稳定信息（身份、偏好、关系、重要经历）和重要约定。闲聊、玩笑、一次性的小事不记。
 - 看 qq 字段分清是谁说的，别记混。某人说的关于他自己的事，fromMsgId 填那条消息的 id。

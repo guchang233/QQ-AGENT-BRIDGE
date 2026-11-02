@@ -53,9 +53,9 @@ export function createMcpServer(bridge: Bridge, caller: Caller): McpServer {
     }, async (args: any) => {
       if (!bound) return runTool(bridge, caller, t, args);
       const { convToken, ...rest } = args ?? {};
-      const conv = convToken ? bridge.policy.resolveConvToken(String(convToken)) : undefined;
-      if (!conv) return { content: [{ type: 'text', text: '错误：会话令牌无效或缺失，操作未执行。请使用提示词中【会话令牌】的值。' }], isError: true };
-      return runTool(bridge, bridge.policy.narrow(caller, parseConv(conv)), t, rest);
+      const ck = bridge.policy.checkConvToken(convToken);
+      if ('error' in ck) return tokenRefused(bridge, caller, t.name, ck.error);
+      return runTool(bridge, bridge.policy.narrow(caller, parseConv(ck.conv)), t, rest);
     });
   }
 
@@ -103,14 +103,20 @@ export async function callToolStateless(bridge: Bridge, caller: Caller, name: st
   let args: any = rawArgs ?? {};
   if (caller.token?.sessionBound) {
     const { convToken, ...rest } = args;
-    const conv = convToken ? bridge.policy.resolveConvToken(String(convToken)) : undefined;
-    if (!conv) return { content: [{ type: 'text', text: '错误：会话令牌无效或缺失，操作未执行。请使用提示词中【会话令牌】的值。' }], isError: true };
-    caller = bridge.policy.narrow(caller, parseConv(conv));
+    const ck = bridge.policy.checkConvToken(convToken);
+    if ('error' in ck) return tokenRefused(bridge, caller, name, ck.error);
+    caller = bridge.policy.narrow(caller, parseConv(ck.conv));
     args = rest;
   }
   const parsed = z.object(t.input).safeParse(args);
   if (!parsed.success) return { content: [{ type: 'text', text: `错误：参数不正确，操作未执行：${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}` }], isError: true };
   return runTool(bridge, caller, t, parsed.data);
+}
+
+/** 会话令牌没通过：告诉模型具体原因，并记一条日志方便排查（这类调用到不了执行层，不进审计） */
+function tokenRefused(bridge: Bridge, caller: Caller, tool: string, why: string): ToolResult {
+  log.warn(`${caller.name} 调用 ${tool} 被拒：${why}`);
+  return { content: [{ type: 'text', text: `错误：${why}。操作未执行。` }], isError: true };
 }
 
 /** 静默会话里允许的工具：读取和写记忆，不包括任何对外发言的动作。 */

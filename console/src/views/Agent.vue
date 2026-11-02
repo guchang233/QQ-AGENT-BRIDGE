@@ -108,6 +108,15 @@ onMounted(load);
               <span class="hint">权限</span>
               <n-checkbox-group :value="t.tiers" @update:value="(v: any) => updateToken(t, { tiers: v })"><n-space :size="10"><n-checkbox v-for="(l, k) in TIER_LABEL" :key="k" size="small" :value="k" :label="l" /></n-space></n-checkbox-group>
             </div>
+            <div v-if="t.sessionBound || t.name === 'dsh'" class="toolbar row2">
+              <span class="hint">会话隔离</span>
+              <n-popconfirm v-if="t.sessionBound" @positive-click="updateToken(t, { sessionBound: false })">
+                <template #trigger><n-switch size="small" :value="true" /></template>
+                关闭后这个令牌可以读写<b>所有</b>会话：群友可能诱导 AI 去别的群发言、读私聊。DSH 的「一键接入」会重新打开它。确定关闭？
+              </n-popconfirm>
+              <n-switch v-else size="small" :value="false" @update:value="() => updateToken(t, { sessionBound: true })" />
+              <span class="hint">{{ t.sessionBound ? 'AI 每次只能操作被唤醒的那个会话（调用工具时带唤醒提示里的会话令牌）' : '已关闭：可以操作所有会话' }}</span>
+            </div>
             <div class="toolbar row2">
               <span class="hint">限定群</span><n-dynamic-tags size="small" :value="t.groups" @update:value="(v: any) => updateToken(t, { groups: v })" />
               <span class="hint">限定私聊</span><n-dynamic-tags size="small" :value="t.private" @update:value="(v: any) => updateToken(t, { private: v })" />

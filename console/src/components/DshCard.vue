@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue';
-import { NCard, NSpace, NButton, NTag, NAlert, NForm, NFormItem, NInput, NSelect, NSwitch, NText, NPopconfirm, useMessage } from 'naive-ui';
+import { NCard, NSpace, NButton, NTag, NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NText, NPopconfirm, useMessage } from 'naive-ui';
 import { api, onPush, isNarrow } from '../api';
 import PageHint from './PageHint.vue';
 
@@ -86,6 +86,7 @@ onUnmounted(off);
       <span class="hint">地址 <code>{{ info.dsh.config.baseUrl }}</code></span>
     </div>
 
+    <n-alert v-if="setup.mcpProblem" type="warning" :show-icon="false" style="margin-top: 8px; font-size: 13px">{{ setup.mcpProblem }}</n-alert>
     <n-alert v-if="setup.qqBridgeDetected" type="info" :show-icon="false" style="margin-top: 8px; font-size: 13px">
       检测到 qq-bridge 的 DSH 配置。一键接入只会添加本项目自己的区块（MCP「qq」、预设「qab-qq」），不会改动 qq-bridge 的任何条目，两者可以共存。
     </n-alert>
@@ -93,7 +94,8 @@ onUnmounted(off);
     <n-space style="margin-top: 8px" :size="6">
       <n-popconfirm @positive-click="install">
         <template #trigger><n-button size="small" type="primary" :loading="busy === 'install'">{{ setup.mcpRegistered ? '重新接入（更新预设）' : '一键接入 DSH' }}</n-button></template>
-        将在 {{ setup.profileDir }} 的 cordis.patch.yml 中注册 MCP（会先备份），并通过 DSH 自己的插件管理器安装预设 bundle。继续？
+        将在 {{ setup.profileDir }} 的 cordis.patch.yml 中注册 MCP（会先备份，并清理重复或残缺的旧注册），并通过 DSH 自己的插件管理器安装预设 bundle。<br />
+        DSH 使用的令牌会恢复为「会话隔离」：AI 每次只能操作被唤醒的那个会话。继续？
       </n-popconfirm>
       <n-button size="small" :loading="busy === 'test'" @click="doTest">测试连接</n-button>
       <n-popconfirm v-if="setup.mcpRegistered || setup.bundleRegistered" @positive-click="uninstall">
@@ -125,6 +127,7 @@ onUnmounted(off);
       </template>
       <n-form-item label="思考强度"><n-select v-model:value="form.reasoningEffort" :options="effortOptions" /></n-form-item>
       <n-form-item label="预设"><n-input v-model:value="form.preset" /></n-form-item>
+      <n-form-item label="卡住判定"><n-input-number v-model:value="form.stallMinutes" :min="1" :max="120" style="width: 110px"><template #suffix>分钟</template></n-input-number><span class="switch-hint">一轮这么久没有任何进展就自动结束</span></n-form-item>
       <n-form-item label="工具审批"><n-select v-model:value="form.approvals" :options="[{ label: '一律拒绝（推荐）', value: 'reject' }, { label: '交给控制台审批', value: 'console' }]" /></n-form-item>
       <n-form-item label="地址"><n-input v-model:value="form.baseUrl" /></n-form-item>
       <n-form-item label="自动发现"><n-switch v-model:value="form.autoDiscover" /><span class="switch-hint">自动找本机 DSH 端口</span></n-form-item>

@@ -141,6 +141,10 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   app.get('/api/config', async () => ({ config: maskConfig(bridge.config), snowlumaAccounts: readSnowLumaAccounts(bridge.config.onebot.snowlumaHome).map((a) => a.uin) }));
   app.put('/api/config', async (req, reply) => {
     const incoming = req.body as any;
+    // Agent 令牌走单独的接口；这里改了不会生效，直接拒绝，免得调用方以为改成功了
+    if (incoming?.agents?.tokens !== undefined && JSON.stringify(incoming.agents.tokens) !== JSON.stringify(bridge.config.agents.tokens)) {
+      return reply.code(400).send({ error: 'agents.tokens 不能在这里修改：请用 PUT /api/tokens/:token（控制台「Agent 接入 → 权限与工具」）。如果你没有改令牌，刷新页面后再保存' });
+    }
     // 掩码字段保持原值
     const merged = unmaskConfig(incoming, bridge.config);
     const parsed = ConfigSchema.safeParse(merged);
@@ -339,6 +343,15 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
       const presets = await d.listPresets();
       return { ok: true, baseUrl: bridge.config.drivers.dsh.baseUrl, presets: presets.map((p: any) => p.id), hasPreset: presets.some((p: any) => p.id === bridge.config.drivers.dsh.preset) };
     } catch (e: any) { return { ok: false, error: e.message }; }
+  });
+  /** 强制结束某会话当前的 AI 回合（卡住时用） */
+  app.post('/api/drivers/:id/cancel', async (req, reply) => {
+    const d = bridge.drivers.get((req.params as any).id);
+    const conv = String((req.body as any)?.conv ?? '');
+    if (!d) return reply.code(404).send({ error: '驱动不存在' });
+    if (!conv) return reply.code(400).send({ error: '缺少 conv' });
+    await d.cancel(conv);
+    return { ok: true };
   });
   /** DSH 里实际可用的服务商、模型和思考强度，给控制台下拉框用 */
   app.get('/api/drivers/dsh/models', async () => {

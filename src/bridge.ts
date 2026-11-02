@@ -77,6 +77,7 @@ export class Bridge extends EventEmitter {
       uploadRoots: this.config.media.uploadRoots,
     });
     this.policy = new Policy(() => this.config);
+    this.policy.knownConvs = () => this.store.conversations().map((c) => c.conv);
     this.usage = new UsageLedger(this.store.db, () => this.prices());
     this.bot.on('event', (ev) => this.onEvent(ev).catch((e) => log.error('处理事件出错', e)));
     this.on('message', (m: StoredMessage) => { if (!m.isSelf) { this.lastIncoming = { at: Date.now(), conv: m.conv }; this.refreshPulse(); } });
@@ -599,6 +600,16 @@ export class Bridge extends EventEmitter {
       readOnly: this.config.access.readOnly,
       pendingApprovals: this.policy.pendingApprovals().length,
       pendingRequests: this.requests.size,
+      agent: this.agentStatus(),
+    };
+  }
+
+  /** AI 驱动在做什么、有没有出问题（仪表盘显示） */
+  agentStatus() {
+    const ds = [...this.drivers.values()].map((d) => d.status());
+    return {
+      running: ds.flatMap((d) => (d.running ?? d.busy.map((conv) => ({ conv, since: 0, step: '', lastProgressAt: 0 }))).map((r) => ({ ...r, driver: d.id, convName: this.convName(r.conv) }))),
+      problems: ds.filter((d) => d.state === 'error').map((d) => ({ driver: d.id, label: d.label, detail: d.detail })),
     };
   }
 }

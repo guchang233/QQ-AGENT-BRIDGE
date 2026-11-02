@@ -15,7 +15,7 @@ export interface ModelCatalog {
   providers: { id: string; name: string; models: { id: string; name: string; efforts: string[]; defaultEffort?: string }[] }[];
 }
 interface SessionRec { sessionId: string; preset: string; model: string; created: number }
-interface TurnState { conv: string; turn: number; startedAt: number; text: string; tools: string[]; model: string; retries: Map<string, number> }
+interface TurnState { conv: string; turn: number; startedAt: number; text: string; tools: string[]; model: string; retries: Map<string, number>; step: string; lastProgressAt: number }
 
 /**
  * DSH 驱动：每个 QQ 会话 ↔ 一个 DSH 会话（使用 QQ 专用 Agent 预设，无本地工具）。
@@ -35,6 +35,13 @@ export class DshDriver extends EventEmitter implements AgentDriver {
   private state: DriverStatus['state'] = 'disabled';
   private detail = '';
   private creating = new Map<string, Promise<SessionRec>>();
+  /** 已提交但 DSH 还没开始的唤醒：conv -> 提交时间 */
+  private queuedAt = new Map<string, number>();
+  /** 被我们结束的回合：DSH 之后补发的 turn/end 不再重复处理 */
+  private abortedSids = new Set<string>();
+  private watchdog?: NodeJS.Timeout;
+  /** 设置模型失败的原因（非空时拒绝唤醒，避免把消息送进没有模型、永远不结束的会话） */
+  modelError = '';
 
   constructor(private bridge: Bridge) {
     super();
@@ -73,6 +80,9 @@ export class DshDriver extends EventEmitter implements AgentDriver {
   private setState(s: DriverStatus['state'], d: string) { this.state = s; this.detail = d; this.emit('state', this.status()); }
 
   async start() {
+    clearInterval(this.watchdog);
+    this.watchdog = setInterval(() => this.checkStalled(), 30_000);
+    this.watchdog.unref?.();
     if (!this.cfg.enabled) { this.setState('disabled', '未启用'); return; }
     this.setState('connecting', '连接中');
     await this.locate();
@@ -80,7 +90,32 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     this.client.start();
   }
 
-  async stop() { this.client.stop(); this.setState('disabled', '已停止'); }
+  async stop() { clearInterval(this.watchdog); this.client.stop(); this.setState('disabled', '已停止'); }
+
+  /** 卡住检测：回合开始后或提交后长时间没有任何进展，就结束它，让会话恢复可用 */
+  checkStalled(now = Date.now()) {
+    const limit = this.cfg.stallMinutes * 60_000;
+    for (const t of [...this.turns.values()]) {
+      if (now - t.lastProgressAt > limit) void this.abort(t.conv, `超过 ${this.cfg.stallMinutes} 分钟没有进展（最后在：${t.step}）`, 'timeout');
+    }
+    for (const [conv, at] of [...this.queuedAt]) {
+      if (now - at > limit && ![...this.turns.values()].some((t) => t.conv === conv)) void this.abort(conv, `提交后 ${this.cfg.stallMinutes} 分钟 DSH 都没有开始处理`, 'timeout');
+    }
+  }
+
+  /** 结束某会话当前回合：通知 DSH 取消，释放忙碌状态，并发出 turn-end 让上层恢复 */
+  async abort(conv: string, why: string, reason: 'aborted' | 'timeout' = 'aborted') {
+    const sid = this.sessions.get(conv)?.sessionId;
+    const t = sid ? this.turns.get(sid) : undefined;
+    if (sid && t) { this.turns.delete(sid); this.abortedSids.add(sid); }
+    this.busyUntil.delete(conv);
+    this.queuedAt.delete(conv);
+    if (sid) await this.client.call('session/cancel', { sessionId: sid }, 10_000).catch(() => {});
+    log.warn(`${conv} 的 DSH 回合已结束：${why}`);
+    this.bridge.activity({ kind: 'turn', level: 'error', conv, actor: 'DSH', title: reason === 'timeout' ? `DSH 回合卡住，已自动结束：${why}` : `已强制结束 DSH 回合：${why}`, detail: { session: sid, tools: t?.tools ?? [] } });
+    const r: TurnResult = { reason, error: why, text: t?.text ?? '', tools: t?.tools ?? [], durationMs: t ? Date.now() - t.startedAt : 0 };
+    this.emit('turn-end', conv, r);
+  }
 
   /** 配置地址连不上且是本机地址时，自动探测 DSH 桌面版的随机端口并记住。 */
   async locate(): Promise<string> {
@@ -106,8 +141,13 @@ export class DshDriver extends EventEmitter implements AgentDriver {
 
   status(): DriverStatus {
     const now = Date.now();
-    return { id: this.id, kind: this.kind, label: this.label, state: this.state, detail: this.modelWarning && this.state === 'ready' ? this.modelWarning : this.detail, sessions: this.sessions.size,
-      busy: [...this.busyUntil].filter(([, t]) => t > now).map(([c]) => c) };
+    const busy = [...this.busyUntil].filter(([, t]) => t > now).map(([c]) => c);
+    const running = busy.map((conv) => {
+      const t = [...this.turns.values()].find((x) => x.conv === conv);
+      const q = this.queuedAt.get(conv) ?? now;
+      return t ? { conv, since: t.startedAt, step: t.step, lastProgressAt: t.lastProgressAt } : { conv, since: q, step: '等 DSH 开始处理', lastProgressAt: q };
+    });
+    return { id: this.id, kind: this.kind, label: this.label, state: this.state, detail: this.modelWarning && this.state === 'ready' ? this.modelWarning : this.detail, sessions: this.sessions.size, busy, running };
   }
 
   isBusy(conv: string) { return (this.busyUntil.get(conv) ?? 0) > Date.now(); }
@@ -193,6 +233,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
       try {
         const r: any = await this.client.call('session/selectModel', { sessionId, provider: c.provider, model: c.model, reasoningEffort: c.reasoningEffort });
         this.modelApplied.set(sessionId, epoch);
+        if (this.modelError) { this.modelError = ''; if (this.state === 'error') this.setState('ready', '已连接'); }
         log.info(`已设置会话模型 ${sessionId} -> ${r?.selected?.provider ?? c.provider}/${r?.selected?.model ?? c.model} (${r?.selected?.reasoningEffort ?? '默认'})`);
         return 'applied';
       } catch (e) {
@@ -204,6 +245,11 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     // 只有「会话不存在」才重建会话；模型、服务商找不到不能当成会话丢了，否则每条消息都会重建会话
     const reason = String(last?.message ?? '').replace(/^session.selectModel 失败：/, '');
     if (/not[- ]?found/i.test(reason) && !/model|provider/i.test(reason)) { this.modelApplied.set(sessionId, epoch); return 'not-found'; }
+    const first = !this.modelError;
+    this.modelError = `模型 ${c.provider}/${c.model} 不可用（${reason}）。请在控制台「Agent 接入 → DeepSeek Harness」从下拉框选择可用的模型`;
+    this.catalogCache = null; // 下次重新读模型目录
+    this.setState('error', this.modelError);
+    if (first) this.bridge.activity({ kind: 'info', level: 'error', actor: 'DSH', title: 'DSH 模型不可用，消息没有送出', detail: this.modelError });
     return 'failed';
   }
 
@@ -211,6 +257,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     const ex = this.sessions.get(conv);
     if (ex && ex.preset === this.cfg.preset) {
       const applied = await this.ensureChatModel(ex.sessionId);
+      if (applied === 'failed') throw new DshError('model', this.modelError);
       // DSH 侧会话已不存在：退役本地映射并重建
       if (applied !== 'not-found') return ex;
       log.info(`会话 ${conv} 在 DSH 侧已不存在，退役本地映射并重建`);
@@ -233,7 +280,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
       // 新版 DSH 事件流需要显式 follow，否则收不到回合事件
       this.client.follow(sessionId);
       this.persist();
-      await this.ensureChatModel(sessionId);
+      if (await this.ensureChatModel(sessionId) === 'failed') throw new DshError('model', this.modelError);
       log.info(`新会话 ${conv} -> ${sessionId}（preset: ${rec.preset}）`);
       return rec;
     })();
@@ -260,11 +307,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
 
   async reset(conv: string) { await this.retire(conv); }
 
-  async cancel(conv: string) {
-    const rec = this.sessions.get(conv);
-    if (rec) await this.client.call('session/cancel', { sessionId: rec.sessionId }).catch(() => {});
-    this.busyUntil.delete(conv);
-  }
+  async cancel(conv: string) { await this.abort(conv, '控制台手动结束'); }
 
   // ------------------------------------------------------------------ 唤醒
   async wake(req: WakeRequest) {
@@ -282,6 +325,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     const content: any[] = [{ type: 'text', text: req.prompt }];
     for (const [i, img] of (req.images ?? []).entries()) content.push({ type: 'image', mediaType: img.mediaType, data: img.data, name: img.name ?? `image-${i + 1}` });
     this.busyUntil.set(req.conv, Date.now() + BUSY_LEASE_MS);
+    this.queuedAt.set(req.conv, Date.now());
     try {
       await this.client.call('session/prompt', { sessionId: rec.sessionId, mode: 'queue', content });
     } catch (e: any) {
@@ -290,7 +334,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         this.forget(req.conv);
         rec = await this.ensureSession(req.conv);
         await this.client.call('session/prompt', { sessionId: rec.sessionId, mode: 'queue', content });
-      } else { this.busyUntil.delete(req.conv); throw e; }
+      } else { this.busyUntil.delete(req.conv); this.queuedAt.delete(req.conv); throw e; }
     }
     this.bridge.activity({ kind: 'wake', level: 'success', conv: req.conv, actor: 'DSH', title: '已送达 DSH', detail: { session: rec.sessionId, reason: req.reason, chars: req.prompt.length } });
   }
@@ -300,9 +344,13 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     const conv = this.convOf.get(sid);
     if (!conv || !ev?.type) return;
     const d = ev.data ?? {};
+    const cur = this.turns.get(sid);
+    if (cur) cur.lastProgressAt = Date.now();
     switch (ev.type) {
       case 'turn/start':
-        this.turns.set(sid, { conv, turn: Number(d.turn), startedAt: Date.now(), text: '', tools: [], model: this.lastModel.get(sid) ?? '', retries: new Map() });
+        this.queuedAt.delete(conv);
+        this.abortedSids.delete(sid);
+        this.turns.set(sid, { conv, turn: Number(d.turn), startedAt: Date.now(), text: '', tools: [], model: this.lastModel.get(sid) ?? '', retries: new Map(), step: '等模型回复', lastProgressAt: Date.now() });
         this.busyUntil.set(conv, Date.now() + BUSY_LEASE_MS);
         this.emit('turn-start', conv);
         this.bridge.activity({ kind: 'turn', conv, actor: 'DSH', title: `DSH 开始思考（第 ${d.turn} 轮）`, detail: { session: sid } });
@@ -312,17 +360,18 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         break;
       case 'llm/retry-started': {
         const t = this.turns.get(sid);
-        if (t) t.retries.set(`${d.turn}|${d.step}`, Number(d.retry ?? (t.retries.get(`${d.turn}|${d.step}`) ?? 0) + 1));
+        if (t) { t.retries.set(`${d.turn}|${d.step}`, Number(d.retry ?? (t.retries.get(`${d.turn}|${d.step}`) ?? 0) + 1)); t.step = '模型请求失败，重试中'; }
         break;
       }
       case 'tool/call': {
         const t = this.turns.get(sid);
-        if (t && d.name) t.tools.push(String(d.name).replace(/^mcp__[^_]+(?:-[^_]+)*__/, ''));
+        if (t && d.name) { t.tools.push(String(d.name).replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')); t.step = `调用工具 ${t.tools[t.tools.length - 1]}`; }
         break;
       }
       case 'assistant/message':
       case 'assistant/attempt': {
         const t = this.turns.get(sid);
+        if (t) t.step = '等模型回复';
         if (ev.type === 'assistant/message' && t) {
           for (const b of d.message?.content ?? []) if (b?.type === 'text' && typeof b.text === 'string') t.text += b.text;
         }
@@ -339,8 +388,10 @@ export class DshDriver extends EventEmitter implements AgentDriver {
         break;
       }
       case 'turn/end': {
+        if (this.abortedSids.delete(sid)) break;
         const t = this.turns.get(sid);
         this.turns.delete(sid);
+        if (this.queuedAt.has(conv)) this.queuedAt.set(conv, Date.now()); // 排队的下一条从现在起算等待时间
         this.busyUntil.delete(conv);
         const kind = d.reason?.kind ?? 'completed';
         const r: TurnResult = {

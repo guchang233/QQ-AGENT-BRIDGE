@@ -134,6 +134,8 @@ export const ConfigSchema = z.object({
       workspaceTitle: z.string().default('QQ 聊天'),
       /** DSH 工具审批：console 交给控制台审批 / reject 一律拒绝 */
       approvals: z.enum(['console', 'reject']).default('reject'),
+      /** 一轮运行多少分钟没有任何进展（工具调用、输出）就判定卡住并自动结束 */
+      stallMinutes: z.number().int().min(1).max(120).default(5),
     }).prefault({}),
   }).prefault({}),
   usage: z.object({
