@@ -10,7 +10,8 @@ import { searchActions, ACTIONS } from '../onebot/catalog.ts';
 
 export type ToolContent =
   | { type: 'text'; text: string }
-  | { type: 'image'; data: string; mimeType: string };
+  | { type: 'image'; data: string; mimeType: string }
+  | { type: 'audio'; data: string; mimeType: string };
 export interface ToolResult { [k: string]: unknown; content: ToolContent[]; isError?: boolean }
 
 export interface ToolDef {

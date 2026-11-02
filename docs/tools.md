@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-> 本文件由 `npm run docs:gen` 自动生成，请勿手改。共 74 个工具（核心 50，系统插件 24）。
+> 本文件由 `npm run docs:gen` 自动生成，请勿手改。共 79 个工具（核心 50，系统插件 29）。
 
 Agent 只会看到其 token 权限等级内、且未在控制台禁用的工具。等级说明见 [agent-guide.md](agent-guide.md)。
 
@@ -597,6 +597,63 @@ Agent 只会看到其 token 权限等级内、且未在控制台禁用的工具�
 | `params` | object |  |  默认 `{}` |
 
 ## 系统插件工具
+
+### `qq_ace_status` — 歌姬合成状态
+
+等级：**读取**（只读）　来源插件：`ace-vocal`
+
+查看本机 ACE Studio 官方 CLI 是否可用、帮助里有哪些命令。需要软件已安装；账号是否登录要看 qq_ace_voices。不会读取登录令牌。
+
+无参数
+
+### `qq_ace_voices` — 虚拟歌手列表
+
+等级：**读取**（只读）　来源插件：`ace-vocal`
+
+列出当前已登录的 ACE Studio 账号可以使用的虚拟歌手。未登录会直接说明，不会尝试登录。
+
+无参数
+
+### `qq_ace_docs` — ACE Studio 命令说明
+
+等级：**读取**（只读）　来源插件：`ace-vocal`
+
+读取本机 acestudio-cli 的帮助。topic 为空时返回命令一览；否则是帮助里的命令路径，例如 export audio。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `topic` | string |  | 命令路径，空格分隔；留空看总览 默认 `""` |
+
+### `qq_ace_sing` — 合成清唱
+
+等级：**发送**　来源插件：`ace-vocal`
+
+用本机已登录的 ACE Studio，把歌词和音符合成一段虚拟歌手的清唱（干声，无伴奏），并把音频返回给你。
+事先：ACE Studio 已打开，账号已在软件里登录。这里只调用官方 acestudio-cli，不读取账号令牌，也不内置声库。
+音符用 notes，例如 "C4:1:你 D4:1:好 E4:2:-"：音高、拍数、一个音节。- 表示把上一个字延长。也可以传 score 数组，或另给 lyrics 让插件按音节填进音符。
+中文一字一音，英文按空格或连字符分音节。要发到 QQ 就填 conv，不要把文件路径贴进聊天。
+命令对不上当前 CLI 时会停下来并说明原因，不会猜测一条命令去改你正在打开的工程。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `notes` | string |  | 音高:拍数:歌词，空格分隔。例 C4:1:你 D4:1:好 E4:2:- |
+| `score` | object[] |  | 与 notes 二选一 |
+| `lyrics` | string |  | 整段歌词。音符上没写 lyric 时按音节填进去 |
+| `singer` | string |  | 音色库中的歌手名，留空用默认或列表第一位 |
+| `language` | string |  | zh / en / ja / ko / es / yue，默认配置 |
+| `bpm` | number |  | 速度，默认配置 |
+| `title` | string |  | 临时工程名 |
+| `conv` | string |  | 填了就把清唱作为语音发到这个会话 |
+
+### `qq_ace_call` — 调用 ACE Studio 命令
+
+等级：**发送**　来源插件：`ace-vocal`
+
+直接调用本机 acestudio-cli 的一条命令。只能运行 help 里列出的命令；账号、登录、付费命令会拒绝；文件路径必须在插件数据目录内。优先用 qq_ace_sing 合成清唱。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `argv` | string[] | 是 | 例如 ["export","audio","--help"]，不要带可执行文件路径 |
 
 ### `qq_memory_remember` — 记住
 
