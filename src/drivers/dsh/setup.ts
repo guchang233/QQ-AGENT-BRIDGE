@@ -25,7 +25,7 @@ export const DSH_TOOLS = [
   'qq_send', 'qq_reply', 'qq_send_burst', 'qq_recall', 'qq_send_image', 'qq_get_image', 'qq_ocr',
   'qq_get_user', 'qq_list_members', 'qq_search_face', 'qq_react', 'qq_poke',
   'qq_list_stickers', 'qq_send_sticker', 'qq_collect_sticker', 'qq_sticker_note',
-  'qq_speak', 'qq_transcribe',
+  'qq_speak', 'qq_transcribe', 'qq_ace_status', 'qq_ace_voices', 'qq_ace_docs', 'qq_ace_sing',
   'qq_memory_remember', 'qq_memory_recall', 'qq_memory_context', 'qq_memory_update', 'qq_memory_links',
   'qq_set_wake', 'qq_social_state', 'qq_get_persona', 'qq_ask_admin',
   'qq_web_search', 'qq_web_fetch',

@@ -4,6 +4,34 @@
 
 系统插件随程序发布，位于 `src/system-plugins/`，可在控制台「插件」页开关与配置；标注「默认关闭」的需手动开启。
 
+## 虚拟歌姬（`ace-vocal`） · 默认关闭
+
+用本机已登录的 ACE Studio，把歌词和音符合成虚拟歌手的清唱，并把音频交回给 AI
+
+**命令**
+
+- `/清唱 <音高:拍:歌词 …>` — 用 ACE Studio 把简谱串唱成清唱（仅管理员）
+
+**Agent 工具**：`qq_ace_status`、`qq_ace_voices`、`qq_ace_docs`、`qq_ace_sing`、`qq_ace_call`
+
+**配置**
+
+| 键 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `cliPath` | string | `""` | acestudio-cli 的完整路径。留空则自动查找安装目录 |
+| `defaultSinger` | string | `""` | 默认歌手名，须是这个账号音色库里已有的名字。留空则用列表里的第一位 |
+| `language` | select（zh/en/ja/ko/es/yue） | `"zh"` | 默认演唱语言 |
+| `bpm` | int | `90` | 默认速度 |
+| `allowCurrentProject` | bool | `false` | CLI 不能新建工程时，允许把音符写进当前已打开的工程 |
+| `effects` | select（off/on） | `"off"` | 导出时是否保留人声效果。清唱干声保持关闭 |
+| `format` | select（wav/mp3） | `"wav"` | 导出格式 |
+| `timeoutSec` | int | `180` | 单次 CLI 最长等待秒数（含云端渲染） |
+| `maxNotes` | int | `256` | 一次最多多少个音符 |
+| `perHour` | int | `12` | 每小时最多合成或直接调用 CLI 几次 |
+| `embedAudio` | bool | `true` | 把音频附在工具结果里返回给 AI（太大时只给路径） |
+| `maxEmbedKb` | int | `2048` | 内联返回给 AI 的音频上限（KB） |
+| `maxSendKb` | int | `8192` | 发到 QQ 的语音上限（KB） |
+
 ## 基础管理（`admin`）
 
 /help 帮助菜单、/状态、管理员在 QQ 里管理插件与只读模式

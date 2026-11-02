@@ -1,7 +1,7 @@
 import { defineAsyncComponent, type Component } from 'vue';
 import {
   AlarmOutline, BarChartOutline, BookOutline, ChatboxEllipsesOutline, ConstructOutline, ExtensionPuzzleOutline, GitCompareOutline, GlobeOutline, HandRightOutline,
-  HappyOutline, HelpCircleOutline, MicOutline, PeopleOutline, PersonAddOutline, RepeatOutline, ShieldCheckmarkOutline, WaterOutline,
+  HappyOutline, HelpCircleOutline, MicOutline, MusicalNotesOutline, PeopleOutline, PersonAddOutline, RepeatOutline, ShieldCheckmarkOutline, WaterOutline,
 } from '@vicons/ionicons5';
 
 /**
@@ -35,6 +35,7 @@ const PLUGINS: Record<string, PluginMeta> = {
   websearch: { icon: GlobeOutline, category: 'ai' },
   stickers: { icon: HappyOutline, category: 'chat', pages: [page('library', '表情包库', () => import('./views/Stickers.vue'))] },
   voice: { icon: MicOutline, category: 'chat' },
+  'ace-vocal': { icon: MusicalNotesOutline, category: 'ai' },
   'keyword-reply': { icon: ChatboxEllipsesOutline, category: 'chat' },
   repeater: { icon: RepeatOutline, category: 'chat' },
   welcome: { icon: HandRightOutline, category: 'chat' },
