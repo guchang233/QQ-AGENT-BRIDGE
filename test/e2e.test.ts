@@ -379,6 +379,8 @@ describe('系统插件', () => {
     const id = String(mock.pushGroupMessage(111, 30003, [{ type: 'text', data: { text: '我下个月要搬去成都了' } }]));
     await waitFor(() => !!bridge.store.getMessage(id, 'group:111'));
     driver.wakes.length = 0;
+    // 前面测试留下的普通唤醒还在排队的话，提炼会被并进去（优先级最低），这里先清掉
+    svc.stateOf('group:111').pending = null;
     svc.schedule('group:111', 'memoryDigest');
     await waitFor(() => driver.wakes.some((w: any) => w.reason === 'memoryDigest'), 6000);
     const wake = driver.wakes.find((w: any) => w.reason === 'memoryDigest');
