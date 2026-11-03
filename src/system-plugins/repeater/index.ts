@@ -7,6 +7,8 @@ export default definePlugin({
   version: '1.0.0',
   description: '群里连续多人发同一句话时跟着复读一次',
   defaultEnabled: false,
+  apiVersion: 1,
+  permissions: ['send'],
   config: {
     threshold: { type: 'int', default: 3, description: '连续多少人发送相同内容后复读' },
     probability: { type: 'float', default: 1, description: '达到阈值后复读的概率 0~1' },

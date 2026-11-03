@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { NButton, NIcon, NInput, NRadioButton, NRadioGroup, NSwitch, useMessage } from 'naive-ui';
 import { api, onPush } from '../api';
 import { CATEGORIES, colorOf, metaOf } from '../pluginRegistry';
+import PluginInstall from '../components/PluginInstall.vue';
 
 const msg = useMessage();
 const router = useRouter();
@@ -14,6 +15,8 @@ const list = ref<any[]>([]);
 const tab = ref<'system' | 'user' | 'astrbot'>('system');
 const q = ref('');
 const busy = ref(new Set<string>());
+const installing = ref(false);
+function installed(name: string) { load(); tab.value = 'user'; router.push(`/plugins/${name}`); }
 
 async function load() { list.value = await api('/api/plugins'); }
 async function rescan() {
@@ -59,8 +62,10 @@ onUnmounted(off);
       <n-input v-model:value="q" size="small" placeholder="搜索插件" clearable style="width: 180px" />
       <span class="grow" />
       <n-button size="small" quaternary @click="rescan">重新扫描</n-button>
+      <n-button size="small" type="primary" @click="installing = true">安装插件</n-button>
     </div>
-    <div v-if="!features && tab === 'user'" class="hint">插件放在 <code>plugins/</code> 目录，保存即热重载。新建：<code>qab plugin new 名字</code>；开发指南见 <code>docs/plugins.md</code>。</div>
+    <PluginInstall v-model:show="installing" @installed="installed" />
+    <div v-if="!features && tab === 'user'" class="hint">点「安装插件」上传插件包，或把插件目录放进 <code>plugins/</code>（保存即热重载）。写插件：<code>qab plugin new 名字</code>，打包：<code>qab plugin pack 目录</code>，指南见 <code>docs/plugins.md</code>。</div>
     <div v-if="!features && tab === 'astrbot'" class="hint">AstrBot 插件放在 <code>astrbot_plugins/</code>，需在「设置 → 媒体与插件」开启兼容层并重启。</div>
     <div v-if="!groups.length" class="empty hint">{{ q ? '没有找到匹配的插件' : '这里还没有插件' }}</div>
 

@@ -538,6 +538,96 @@ describe('系统插件', () => {
   });
 });
 
+describe('插件 SDK 与插件包', () => {
+  const pluginsDir = () => (bridge.pluginHost as any).sources.find((x: any) => !x.system).dir as string;
+  /** 在 plugins/ 下放一个测试插件（纯 JS，不用 import） */
+  const put = (name: string, manifest: object, body: string) => {
+    const dir = path.join(pluginsDir(), name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({ name, version: '1.0.0', ...manifest }));
+    fs.writeFileSync(path.join(dir, 'index.js'), `export default { setup(ctx) { ${body} } };`);
+    return dir;
+  };
+  const cleanup = async (...names: string[]) => {
+    for (const n of names) fs.rmSync(path.join(pluginsDir(), n), { recursive: true, force: true });
+    await bridge.pluginHost!.loadAll(); // 先停掉插件（关闭它的数据库），再删数据
+    for (const n of names) fs.rmSync(path.join(bridge.dataDir, 'plugins', n), { recursive: true, force: true });
+  };
+
+  it('随附插件和示例插件只用公开 SDK', () => {
+    const files = [...fs.readdirSync(path.join(import.meta.dirname, '..', 'src', 'system-plugins')).map((n) => path.join(import.meta.dirname, '..', 'src', 'system-plugins', n, 'index.ts')),
+      path.join(import.meta.dirname, '..', 'plugins', 'hello', 'index.ts')];
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/ctx\.(bridge|store|media)\b/);
+      expect(src, f).toMatch(/apiVersion:\s*1/);
+      expect(src, f).toMatch(/from '(qq-agent-bridge|\.\.\/\.\.\/sdk\.ts)'/);
+    }
+  });
+
+  it('API 版本不对、缺权限都拒绝并说明原因；新版插件有自己的数据库', async () => {
+    const host = bridge.pluginHost!;
+    put('t-future', { apiVersion: 99, permissions: [] }, '');
+    put('t-noperm', { apiVersion: 1, permissions: ['send'] }, "ctx.tool({ name: 'x', description: 'x', input: {}, handler: () => 'x' });");
+    put('t-db', { apiVersion: 1, permissions: [] }, "ctx.migrate('CREATE TABLE IF NOT EXISTS t (v TEXT)'); ctx.db.prepare('INSERT INTO t VALUES (?)').run('ok');");
+    try {
+      await host.loadAll();
+      expect(host.plugins.get('t-future')?.error).toContain('v99');
+      expect(host.plugins.get('t-noperm')?.error).toContain('给 AI 注册工具');
+      expect(host.plugins.get('t-db')?.loaded).toBe(true);
+      expect(fs.existsSync(path.join(bridge.dataDir, 'plugins', 't-db', 'plugin.db'))).toBe(true);
+      expect((bridge.store.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name = 't'").get() as any).n).toBe(0); // 没写进主库
+    } finally { await cleanup('t-future', 't-noperm', 't-db'); }
+  });
+
+  it('反复出错的插件自动暂停，不影响别的', async () => {
+    const host = bridge.pluginHost!;
+    put('t-crash', { apiVersion: 1, permissions: [] }, "ctx.onMessage(() => { throw new Error('boom'); });");
+    try {
+      await host.loadAll();
+      for (let i = 0; i < 10; i++) mock.pushGroupMessage(111, 30003, [{ type: 'text', data: { text: `crash ${i}` } }]);
+      await waitFor(() => !!host.plugins.get('t-crash')?.error, 8000);
+      expect(host.plugins.get('t-crash')).toMatchObject({ loaded: false });
+      expect(host.plugins.get('t-crash')!.error).toContain('已暂停');
+      expect(host.plugins.get('social')?.loaded).toBe(true);
+    } finally { await cleanup('t-crash'); }
+  });
+
+  it('打包、上传检查、安装、卸载', async () => {
+    const { packPlugin } = await import('../src/plugins/package.ts');
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'qab-pkg-'));
+    fs.writeFileSync(path.join(src, 'plugin.json'), JSON.stringify({ name: 't-pkg', version: '2.0.0', apiVersion: 1, permissions: ['send'] }));
+    fs.writeFileSync(path.join(src, 'index.js'), "export default { setup(ctx) { ctx.command('t-pkg-ping', (e) => e.reply('pong')); } };");
+    const zip = packPlugin(src, path.join(src, '..', `t-pkg-${Date.now()}.zip`));
+    const base = `http://127.0.0.1:${PORT}`;
+    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'secret123' }) });
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([fs.readFileSync(zip)]), 't-pkg.zip');
+      const info = await (await fetch(`${base}/api/plugins/package`, { method: 'POST', headers: { cookie }, body: form })).json();
+      expect(info).toMatchObject({ manifest: { name: 't-pkg', version: '2.0.0', permissions: ['send'] }, installed: null, problems: [] });
+      const done = await (await fetch(`${base}/api/plugins/package/${info.id}/install`, { method: 'POST', headers: { cookie } })).json();
+      expect(done, JSON.stringify(done)).toMatchObject({ ok: true, name: 't-pkg', loaded: true });
+      fs.mkdirSync(path.join(bridge.dataDir, 'plugins', 't-pkg'), { recursive: true });
+      const del = await fetch(`${base}/api/plugins/t-pkg?keepData=0`, { method: 'DELETE', headers: { cookie } });
+      expect(del.status).toBe(200);
+      expect(fs.existsSync(path.join(pluginsDir(), 't-pkg'))).toBe(false);
+      expect(fs.existsSync(path.join(bridge.dataDir, 'plugins', 't-pkg'))).toBe(false);
+      expect(bridge.pluginHost!.plugins.has('t-pkg')).toBe(false);
+      // 内置功能和随附插件不能卸载
+      expect((await fetch(`${base}/api/plugins/social`, { method: 'DELETE', headers: { cookie } })).status).toBe(400);
+      // 缺 plugin.json 的包拒绝
+      const bad = new FormData();
+      bad.append('file', new Blob([Buffer.from('PK\x03\x04garbage')]), 'x.zip');
+      expect((await fetch(`${base}/api/plugins/package`, { method: 'POST', headers: { cookie }, body: bad })).status).toBe(400);
+    } finally {
+      fs.rmSync(src, { recursive: true, force: true }); fs.rmSync(zip, { force: true });
+      await cleanup('t-pkg');
+    }
+  });
+});
+
 describe('token 会话范围', () => {
   it('受限 token 看不到、发不到范围外会话', async () => {
     const sc = new Client({ name: 't3', version: '1' });

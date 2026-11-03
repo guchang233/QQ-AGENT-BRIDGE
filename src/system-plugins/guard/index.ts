@@ -7,6 +7,8 @@ export default definePlugin({
   version: '1.0.0',
   description: '检测刷屏与重复消息，自动警告、撤回或禁言',
   defaultEnabled: false,
+  apiVersion: 1,
+  permissions: ['send', 'onebot'],
   config: {
     windowSec: { type: 'int', default: 10, description: '统计窗口（秒）' },
     maxMessages: { type: 'int', default: 8, description: '窗口内最多消息数' },

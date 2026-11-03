@@ -8,8 +8,10 @@ export default definePlugin({
   name: 'hello',
   displayName: '示例插件',
   version: '1.0.0',
-  description: '演示命令、正则、通知、配置、定时任务、Agent 工具与插件间服务调用',
-  softDepends: ['memory'],
+  description: '演示命令、正则、通知、配置、Agent 工具与使用记忆功能',
+  apiVersion: 1,
+  // 用到的能力：发消息、调用 OneBot（戳回去）、给 AI 注册工具、写记忆
+  permissions: ['send', 'onebot', 'agent-tools', 'memory'],
   config: {
     greeting: { type: 'string', default: '你好呀', description: '打招呼用语' },
     pokeBack: { type: 'bool', default: true, description: '被戳时戳回去' },
@@ -46,12 +48,11 @@ export default definePlugin({
       handler: ({ sides }) => `掷出了 ${1 + Math.floor(Math.random() * sides)} 点（${sides} 面）`,
     });
 
-    // 调用其它插件提供的服务（可选依赖）
-    const memory = ctx.useOptional<{ remember: (x: { content: string; scope?: string }) => Promise<unknown> }>('memory');
+    // 使用内置的记忆功能（关闭时 ctx.memory 为 undefined）
     ctx.command('记个笔记', async (e) => {
-      if (!memory) return e.reply('记忆插件未启用');
-      await memory.remember({ content: e.argText, scope: e.conv });
+      if (!ctx.memory) return e.reply('记忆功能没有开启');
+      await ctx.memory.remember({ content: e.argText, scope: e.conv });
       await e.reply('记下了');
-    }, { desc: '用记忆插件记一条笔记（演示插件间调用）', usage: '<内容>' });
+    }, { desc: '记一条笔记（演示使用记忆功能）', usage: '<内容>' });
   },
 });

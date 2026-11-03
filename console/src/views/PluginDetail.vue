@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { NButton, NIcon, NSpin, NSwitch, NTab, NTabs, NTag, useMessage } from 'naive-ui';
+import { NButton, NCheckbox, NIcon, NPopconfirm, NSpin, NSwitch, NTab, NTabs, NTag, useMessage } from 'naive-ui';
 import { ArrowBackOutline } from '@vicons/ionicons5';
 import { api, onPush } from '../api';
 import { colorOf, metaOf } from '../pluginRegistry';
@@ -44,6 +44,15 @@ async function reload() {
   finally { busy.value = false; load(); }
 }
 
+const PERM: Record<string, string> = { send: '发消息', onebot: '调用 OneBot 动作', history: '读取聊天记录', memory: '写入记忆', 'agent-tools': '给 AI 注册工具', http: '注册控制台接口' };
+const removable = computed(() => plugin.value && !plugin.value.system && plugin.value.kind === 'native');
+const keepData = ref(true);
+async function uninstall() {
+  busy.value = true;
+  try { await api(`/api/plugins/${name.value}?keepData=${keepData.value ? 1 : 0}`, { method: 'DELETE' }); msg.success('已卸载'); router.push('/plugins'); }
+  catch (e: any) { msg.error(e.message); busy.value = false; }
+}
+
 const off = onPush((t) => { if (t === 'plugins') load(); });
 onMounted(load);
 onUnmounted(off);
@@ -68,11 +77,17 @@ watch(name, load);
         <div class="desc">{{ plugin.description }}</div>
       </div>
       <n-button v-if="!plugin.builtin" size="small" quaternary :disabled="!plugin.enabled || busy" @click="reload">重载</n-button>
+      <n-popconfirm v-if="removable" @positive-click="uninstall">
+        <template #trigger><n-button size="small" quaternary type="error" :disabled="busy">卸载</n-button></template>
+        <div>卸载「{{ plugin.displayName }}」？</div>
+        <n-checkbox v-model:checked="keepData" style="margin-top: 6px">保留它的数据和设置（以后重装可以接着用）</n-checkbox>
+      </n-popconfirm>
       <n-switch :value="plugin.enabled" :loading="busy" :aria-label="`${plugin.enabled ? '停用' : '启用'}${plugin.displayName}`" @update:value="toggle" />
     </header>
 
     <div v-if="plugin.error" class="error">{{ plugin.error }}</div>
     <div v-else-if="plugin.lastError" class="error">最近错误：{{ plugin.lastError }}</div>
+    <div v-if="plugin.deprecated?.length" class="warn">这个插件用到了 QAB 的内部接口（{{ plugin.deprecated.map((k: string) => `ctx.${k}`).join('、') }}），以后的版本可能失效。如果是你写的，请改用公开 SDK（见 docs/plugins.md）；不是的话请联系作者更新。</div>
 
     <n-tabs :value="tab" type="line" size="small" @update:value="go">
       <n-tab v-for="p in pages" :key="p.key" :name="p.key">{{ p.label }}</n-tab>
@@ -93,6 +108,8 @@ watch(name, load);
         <template v-if="plugin.calls"><dt>触发次数</dt><dd>{{ plugin.calls }}</dd></template>
         <template v-if="plugin.crons"><dt>定时任务</dt><dd>{{ plugin.crons }}</dd></template>
         <template v-if="plugin.depends?.length"><dt>依赖</dt><dd>{{ plugin.depends.join('、') }}</dd></template>
+        <template v-if="!plugin.builtin"><dt>插件 API</dt><dd>{{ plugin.apiVersion ? `v${plugin.apiVersion}` : '未声明（旧式插件）' }}</dd></template>
+        <template v-if="!plugin.builtin"><dt>权限</dt><dd>{{ plugin.permissions ? (plugin.permissions.map((p: string) => PERM[p] ?? p).join('、') || '无') : '未声明（视为需要全部）' }}</dd></template>
       </dl>
       <section v-if="plugin.commands.length"><h3>QQ 命令</h3>
         <div v-for="c in plugin.commands" :key="c.names[0]" class="line"><code>/{{ c.names.join(' /') }}{{ c.usage ? ` ${c.usage}` : '' }}</code><span class="hint">{{ c.desc }}</span></div>
@@ -112,6 +129,7 @@ watch(name, load);
 .name { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
 .ver { font-size: 12px; font-weight: 400; opacity: .5; }
 .desc { font-size: 12px; opacity: .65; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.warn { padding: 6px 10px; border-radius: 6px; font-size: 12px; color: #c08000; background: rgba(240,160,32,.12); }
 .error { padding: 6px 10px; border-radius: 6px; font-size: 12px; color: #d03050; background: rgba(208,48,80,.1); overflow-wrap: anywhere; }
 .off-note { padding: 32px 0; text-align: center; }
 .info { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }

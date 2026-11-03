@@ -9,7 +9,7 @@ import type { WebSocket } from 'ws';
 import type { Bridge } from '../bridge.ts';
 import type { PluginHost } from '../plugins/host.ts';
 import { CONSOLE_CALLER } from '../policy.ts';
-import { ConfigSchema, ROOT, TIERS, guessSnowLumaHome, hasOneBotConfig, type Config } from '../config.ts';
+import { ConfigSchema, ROOT, TIERS, resolveFromRoot, guessSnowLumaHome, hasOneBotConfig, type Config } from '../config.ts';
 import { handleMcpHttp, mcpSessions, toolsFor, callToolStateless } from '../mcp/server.ts';
 import { buildTools } from '../mcp/tools.ts';
 import { extraTools } from '../mcp/server.ts';
@@ -297,6 +297,42 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     const failed = op === 'rescan' ? undefined : plugins.plugins.get(name)?.error;
     if (failed) return reply.code(500).send({ error: failed });
     return { ok: true };
+  });
+  // 插件包：上传或填地址 → 检查（给用户看名称、版本、权限）→ 确认安装；卸载可保留数据
+  const { PluginPackages } = await import('../plugins/package.ts');
+  const pkgs = new PluginPackages(bridge.dataDir, () => resolveFromRoot(bridge.config.plugins.dir), (n) => {
+    const st = plugins.plugins.get(n);
+    return st ? st.manifest.version ?? '' : null;
+  });
+  const checked = (r: Awaited<ReturnType<typeof pkgs.inspectUrl>>) => {
+    const st = plugins.plugins.get(r.manifest.name);
+    if (st?.system) r.problems.push(st.builtin ? `「${r.manifest.name}」是内置功能的名字，不能用` : `「${r.manifest.name}」和随程序发布的插件重名`);
+    return r;
+  };
+  app.post('/api/plugins/package', async (req, reply) => {
+    const file = await (req as any).file();
+    if (!file) return reply.code(400).send({ error: '没有文件' });
+    try { return checked(pkgs.inspectBuffer(await file.toBuffer())); } catch (e: any) { return reply.code(400).send({ error: e.message }); }
+  });
+  app.post('/api/plugins/package-url', async (req, reply) => {
+    try { return checked(await pkgs.inspectUrl(String((req.body as any)?.url ?? '').trim())); } catch (e: any) { return reply.code(400).send({ error: e.message }); }
+  });
+  app.post('/api/plugins/package/:id/install', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    let r;
+    try { r = pkgs.install(id); } catch (e: any) { return reply.code(400).send({ error: e.message }); }
+    try { await plugins.refresh(r.name); } catch (e: any) { return reply.code(500).send({ error: `已放进 plugins/${r.name}，但加载失败：${e.message}`, name: r.name }); }
+    const st = plugins.plugins.get(r.name);
+    return { ok: true, name: r.name, loaded: !!st?.loaded, error: st?.error ?? null };
+  });
+  app.delete('/api/plugins/:name', async (req, reply) => {
+    const { name } = req.params as { name: string };
+    const keepData = String((req.query as any)?.keepData ?? '1') !== '0';
+    try {
+      const st = await plugins.remove(name);
+      pkgs.uninstall(name, st.entry, keepData);
+      return { ok: true };
+    } catch (e: any) { return reply.code(400).send({ error: e.message }); }
   });
   app.put('/api/plugins/:name/config', async (req) => {
     const { name } = req.params as { name: string };

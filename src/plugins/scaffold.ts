@@ -11,6 +11,8 @@ export default definePlugin({
   displayName: '${name}',
   version: '0.1.0',
   description: '一句话说明这个插件做什么',
+  apiVersion: 1,
+  permissions: ['send'],
   config: {
     enabled_groups: { type: 'list', default: [], description: '生效的群号（留空 = 全部）' },
   },
@@ -30,6 +32,8 @@ export default definePlugin({
   displayName: '${name}',
   version: '0.1.0',
   description: '命令型插件示例',
+  apiVersion: 1,
+  permissions: ['send'],
   config: {
     cooldownSec: { type: 'int', default: 5, description: '每人冷却秒数' },
   },
@@ -50,6 +54,8 @@ export default definePlugin({
   displayName: '${name}',
   version: '0.1.0',
   description: '给 Agent 提供新工具的插件',
+  apiVersion: 1,
+  permissions: ['agent-tools'],
   setup(ctx) {
     ctx.tool({
       name: 'lookup',                      // 实际工具名：${name}_lookup
@@ -64,18 +70,19 @@ export default definePlugin({
 `,
   service: (name) => `import { definePlugin } from 'qq-agent-bridge';
 
-/** 依赖记忆插件并对外提供服务的示例。其它插件：ctx.use('${name}') */
+/** 使用记忆功能并对外提供服务的示例。其它插件：ctx.use('${name}') */
 export default definePlugin({
   name: '${name}',
   displayName: '${name}',
   version: '0.1.0',
   description: '服务型插件示例',
-  depends: ['memory'],
+  apiVersion: 1,
+  permissions: ['history', 'http'],
   setup(ctx) {
-    const memory = ctx.use<{ recall: (q: { query: string; limit?: number }) => Promise<{ content: string }[]> }>('memory');
     ctx.provide({
       async summarize(topic: string) {
-        const list = await memory.recall({ query: topic, limit: 5 });
+        if (!ctx.memory) return '记忆功能没有开启';
+        const list = await ctx.memory.recall({ query: topic, limit: 5 });
         return list.map((m) => m.content).join('；');
       },
     });

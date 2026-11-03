@@ -7,6 +7,8 @@ export default definePlugin({
   version: '1.0.0',
   description: '新成员入群欢迎、成员退群提示（可按群配置）',
   defaultEnabled: false,
+  apiVersion: 1,
+  permissions: ['send', 'onebot'],
   config: {
     welcome: { type: 'text', default: '欢迎 {at} 加入本群！[face:鼓掌] 有问题可以随时问～', description: '欢迎语（{at} {name} {qq} {group}，支持内联标记）' },
     farewell: { type: 'text', default: '', description: '退群提示（留空不发送）' },
@@ -17,8 +19,8 @@ export default definePlugin({
     const enabledIn = (g: string) => !ctx.config.groups.length || ctx.config.groups.includes(g);
     const render = async (tpl: string, groupId: string, userId: string) => {
       let name = userId;
-      try { const info: any = await ctx.bridge.bot.call('get_stranger_info', { user_id: Number(userId) }); name = info?.nickname || userId; } catch { /* ignore */ }
-      const group = ctx.bridge.groups.get(groupId)?.name ?? groupId;
+      try { const info: any = await ctx.qq.call('get_stranger_info', { user_id: Number(userId) }); name = info?.nickname || userId; } catch { /* ignore */ }
+      const group = ctx.qq.groups().find((x) => x.id === groupId)?.name ?? groupId;
       return tpl.replaceAll('{at}', `[at:${userId}]`).replaceAll('{name}', name).replaceAll('{qq}', userId).replaceAll('{group}', group);
     };
     ctx.onNotice('group_increase', async (ev) => {

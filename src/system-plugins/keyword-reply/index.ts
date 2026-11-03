@@ -7,6 +7,8 @@ export default definePlugin({
   version: '1.0.0',
   description: '消息包含关键词时自动回复',
   defaultEnabled: false,
+  apiVersion: 1,
+  permissions: ['send'],
   config: {
     rules: { type: 'list', default: ['早安=>早上好呀[face:太阳]', '晚安=>晚安，好梦[face:月亮]'], description: '规则：关键词=>回复（回复支持内联标记；关键词以 re: 开头表示正则）' },
     exact: { type: 'bool', default: false, description: '整句完全匹配（否则包含即触发）' },

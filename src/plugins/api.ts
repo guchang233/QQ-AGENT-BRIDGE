@@ -52,6 +52,10 @@ export interface PluginMeta {
   softDepends?: string[];
   /** 未在设置中显式开关时是否启用（默认 true） */
   defaultEnabled?: boolean;
+  /** 按哪个插件 API 版本写的（见 src/sdk.ts 的 API_VERSION）；写了才启用新版上下文 */
+  apiVersion?: number;
+  /** 需要的权限（见 src/sdk.ts 的 Permission）；不写视为需要全部 */
+  permissions?: string[];
   /** 配置声明 */
   config?: ConfigSchema;
 }
@@ -157,11 +161,21 @@ export interface PluginContext<C = Record<string, any>> {
   readonly media: MediaService;
 
   qq: {
-    send(conv: string, content: string | Segment[], opts?: SendOptions): Promise<string[]>;
+    send(conv: string, content: string | Segment[], opts?: SendOptions & { as?: unknown }): Promise<string[]>;
     call<T = any>(action: string, params?: Record<string, unknown>): Promise<T>;
     readonly selfId: string | undefined;
     nameOf(conv: string, userId: string): string | undefined;
+    convName(conv: string): string;
+    isOwner(userId: string): boolean;
+    groups(): { id: string; name: string; memberCount?: number }[];
+    friends(): { id: string; nickname: string; remark: string }[];
+    recent(conv: string, limit?: number): { conv: string; msgId: string; senderId: string; senderName: string; isSelf: boolean; text: string; segments: Segment[]; mentioned: boolean; ts: number }[];
     format(m: StoredMessage): string;
+  };
+  /** 记忆功能的稳定外观（关闭时为 undefined） */
+  readonly memory: undefined | {
+    remember(input: { content: string; scope?: string; subject?: string; kind?: string; importance?: number }): Promise<{ id: number }>;
+    recall(input: { query: string; scope?: string; limit?: number }): Promise<{ id: number; content: string; kind: string; scope: string; subject?: string; importance: number }[]>;
   };
   /** 底层桥接对象（逃生舱，慎用） */
   readonly bridge: Bridge;
@@ -174,6 +188,10 @@ export interface PluginContext<C = Record<string, any>> {
   onRequest(handler: (req: any) => unknown): void;
   /** 订阅桥接事件（自动在卸载时退订） */
   on(event: BridgeEventName, fn: (...args: any[]) => unknown): void;
+  onConnected(fn: () => unknown): void;
+  onMessageSent(fn: (m: any) => unknown): void;
+  /** 在控制台「动态」里记一条 */
+  activity(title: string, detail?: string, level?: 'info' | 'warn' | 'error' | 'success'): void;
 
   // ---- 对外能力
   /** 注册 MCP 工具，供 Agent 调用 */

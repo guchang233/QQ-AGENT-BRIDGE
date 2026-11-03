@@ -1,16 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { Cron } from 'croner';
 import type { Bridge } from '../bridge.ts';
 import type { StoredMessage } from '../store/db.ts';
-import { parseConv, plainText } from '../message/segments.ts';
+import { parseConv, convKey, plainText } from '../message/segments.ts';
 import { ROOT, resolveFromRoot } from '../config.ts';
 import { createLogger } from '../util/log.ts';
 import { atomicWrite } from '../util/fs.ts';
 import type { Caller } from '../policy.ts';
 import { extraTools, notifyToolsChanged } from '../mcp/server.ts';
+import { API_VERSION } from '../sdk.ts';
 import type { ToolDef } from '../mcp/tools.ts';
 import type {
   CommandOptions, ConfigSchema, Handler, HandlerOptions, MessageEvent, PluginContext, PluginDefinition, PluginMeta, PluginToolDef, RouteRequest, BridgeEventName,
@@ -49,7 +51,18 @@ export interface PluginState {
   /** 外部管理的插件（如 AstrBot 兼容层）自定义操作 */
   ops?: { reload(): Promise<void>; setEnabled(v: boolean): Promise<void> };
   commandList?: { names: string[]; desc: string }[];
+  /** 用到的已弃用内部接口（控制台提示作者迁移） */
+  deprecated?: string[];
+  /** 最近出错的时间，用来判断是否连续崩溃 */
+  errorTimes?: number[];
+  /** 插件自己的数据库（apiVersion ≥ 1） */
+  ownDb?: DatabaseSync;
 }
+
+/** 5 分钟内出错这么多次就暂停插件（内置功能只告警不暂停） */
+const CRASH_LIMIT = 10;
+const CRASH_WINDOW_MS = 5 * 60_000;
+const PERMISSION_LABEL: Record<string, string> = { send: '发消息', onebot: '调用 OneBot 动作', history: '读取聊天记录', memory: '写入记忆', 'agent-tools': '给 AI 注册工具', http: '注册控制台接口' };
 
 export interface ExternalDispatcher { name: string; dispatch(e: MessageEvent): Promise<void> }
 
@@ -209,6 +222,11 @@ export class PluginHost extends EventEmitter {
     const st = this.blank(name, c.dir, c.entry, c.system, meta, c.builtin);
     this.plugins.set(name, st);
     if (!st.enabled) return;
+    if (!c.builtin && meta.apiVersion != null && Number(meta.apiVersion) !== API_VERSION) {
+      st.error = `这个插件按插件 API v${meta.apiVersion} 编写，当前 QAB 提供的是 v${API_VERSION}。请更新${Number(meta.apiVersion) > API_VERSION ? ' QAB' : '插件'}后再启用`;
+      log.warn(`${name}：${st.error}`);
+      return;
+    }
     for (const dep of meta.depends ?? []) {
       const d = this.plugins.get(dep);
       if (!d?.loaded) { st.error = `缺少依赖插件「${dep}」${d && !d.enabled ? '（已停用）' : d?.error ? '（加载失败）' : ''}`; log.warn(`${name}：${st.error}`); return; }
@@ -227,6 +245,8 @@ export class PluginHost extends EventEmitter {
   private async teardown(st: PluginState) {
     for (const c of st.crons) c.stop();
     for (const fn of st.unloaders.reverse()) { try { await fn(); } catch (e: any) { log.warn(`${st.name} 卸载回调出错：${e.message}`); } }
+    try { st.ownDb?.close(); } catch { /* 已关闭 */ }
+    st.ownDb = undefined;
     for (const t of st.tools) extraTools.delete(t);
     if (st.tools.length) notifyToolsChanged();
     for (const s of st.provides) this.services.delete(s);
@@ -258,6 +278,30 @@ export class PluginHost extends EventEmitter {
     for (const n of affected) await this.loadOne(n);
     if (failure) { const s = this.plugins.get(name); if (s) s.lastError = `${failure}（继续使用上一版）`; }
     this.emit('changed');
+  }
+
+  /** 新装或更新了某个用户插件后加载它（已加载的就重载） */
+  async refresh(name: string) {
+    if (this.plugins.has(name)) return this.reload(name);
+    const fresh = (await this.discover()).find((c) => c.name === name);
+    if (!fresh) { this.emit('changed'); throw new Error(this.plugins.get(name)?.error ?? `没有找到插件「${name}」`); }
+    this.defs.set(name, fresh);
+    await this.loadOne(name);
+    this.emit('changed');
+  }
+
+  /** 卸载前把插件停掉并从列表移除（代码文件由 PluginPackages 删除） */
+  async remove(name: string) {
+    const st = this.plugins.get(name);
+    if (!st) throw new Error(`插件 ${name} 不存在`);
+    if (st.system || st.kind !== 'native') throw new Error(st.builtin ? '内置功能不能卸载，可以在功能页关掉' : '随程序发布的插件不能卸载，可以关掉');
+    await this.teardown(st);
+    this.plugins.delete(name);
+    this.defs.delete(name);
+    const cfg = structuredClone(this.bridge.config);
+    if (name in cfg.plugins.overrides) { delete cfg.plugins.overrides[name]; this.bridge.updateConfig(cfg); }
+    this.emit('changed');
+    return st;
   }
 
   async setEnabled(name: string, enabled: boolean) {
@@ -327,6 +371,7 @@ export class PluginHost extends EventEmitter {
       commands: p.commandList ?? p.handlers.filter((h) => h.kind === 'command').map((h) => ({ names: h.names!, desc: h.opts.desc ?? '', usage: h.opts.usage })),
       handlers: p.handlers.length, tools: p.tools, crons: p.crons.length, schema: p.schema, config: p.config, depends: p.depends, provides: p.provides,
       routes: (p.routes ?? []).map((r) => `${r.method} ${r.path}`),
+      apiVersion: p.manifest.apiVersion ?? null, permissions: p.manifest.permissions ?? null, deprecated: p.deprecated ?? [],
     }));
   }
 
@@ -343,6 +388,31 @@ export class PluginHost extends EventEmitter {
     return undefined;
   }
 
+  // ==================================================================== 出错隔离
+  /** 记一次插件出错；插件（非内置功能）短时间内反复出错就暂停，免得拖垮整个程序或刷屏 */
+  noteError(st: PluginState, where: string, err: unknown) {
+    const msg = (err as any)?.message ?? String(err);
+    st.lastError = `${new Date().toLocaleString('zh-CN')} ${where}：${msg}`;
+    log.error(`${st.builtin ? '内置功能' : '插件'} ${st.name} ${where}出错：${msg}`);
+    if (st.builtin || !st.loaded) return;
+    const now = Date.now();
+    st.errorTimes = [...(st.errorTimes ?? []).filter((t) => now - t < CRASH_WINDOW_MS), now];
+    if (st.errorTimes.length < CRASH_LIMIT) return;
+    st.errorTimes = [];
+    st.error = `5 分钟内出错 ${CRASH_LIMIT} 次，已暂停。最后一次：${where}：${msg}。修好后点「重载」或重新打开开关即可恢复`;
+    this.bridge.activity({ kind: 'error', level: 'error', actor: `插件 ${st.manifest.displayName ?? st.name}`, title: '插件反复出错，已暂停', detail: st.error });
+    this.teardown(st).then(() => this.emit('changed')).catch(() => {});
+  }
+
+  /** 插件是否声明了某个权限（没声明 permissions 的插件视为全部都有） */
+  allowed(st: PluginState, perm: string) {
+    const p = st.manifest.permissions;
+    return st.builtin || !Array.isArray(p) || p.includes(perm);
+  }
+  private need(st: PluginState, perm: string, what: string) {
+    if (!this.allowed(st, perm)) throw new Error(`插件「${st.name}」没有声明「${PERMISSION_LABEL[perm] ?? perm}」权限（permissions 里加上 '${perm}'），不能${what}`);
+  }
+
   // ==================================================================== 上下文
   private makeContext(st: PluginState): PluginContext<any> {
     const bridge = this.bridge;
@@ -352,10 +422,44 @@ export class PluginHost extends EventEmitter {
     const timers: NodeJS.Timeout[] = [];
     st.unloaders.push(() => timers.forEach((t) => { clearTimeout(t); clearInterval(t); }));
     const kvNs = `plugin:${st.name}`;
+    // 声明了 apiVersion 的插件用新版上下文：自己的数据库、权限检查、内部对象标为弃用
+    const v1 = !st.builtin && st.manifest.apiVersion != null;
+    const need = (perm: string, what: string) => host.need(st, perm, what);
+    const dataDir = this.dataDirOf(st.name);
+    const ownDb = () => (st.ownDb ??= new DatabaseSync(path.join(dataDir, 'plugin.db')));
+    const deprecated = (key: string) => {
+      if (st.builtin || st.deprecated?.includes(key)) return;
+      (st.deprecated ??= []).push(key);
+      logger.warn(`用到了内部接口 ctx.${key}，它跨版本不稳定，下个大版本将移除。请改用公开 SDK（见 docs/plugins.md）`);
+    };
+    const asCaller = (c: any): Caller => (c && typeof c === 'object' && c.__caller ? c.__caller : c?.kind ? c : caller);
+    const toMsg = (m: StoredMessage) => ({ conv: m.conv, msgId: m.msgId, senderId: m.senderId, senderName: m.senderName, isSelf: m.isSelf, text: m.text, segments: m.segments, mentioned: m.mentioned, ts: m.ts });
+    const guard = (where: string, fn: (...a: any[]) => unknown) => (...a: any[]) => {
+      try { const r: any = fn(...a); if (r?.catch) r.catch((e: any) => host.noteError(st, where, e)); } catch (e) { host.noteError(st, where, e); }
+    };
+    const memoryApi = {
+      async remember(input: any) {
+        need('memory', '写入记忆');
+        const svc: any = host.services.get('memory');
+        if (!svc) throw new Error('记忆功能未开启');
+        // 只放行这几个字段：插件不能钉住记忆、不能冒充管理员确认过的内容
+        const { content, scope, subject, kind, importance } = input ?? {};
+        if (!String(content ?? '').trim()) throw new Error('content 不能为空');
+        const r = await svc.remember({ content: String(content), scope, subject, kind, importance, source: `plugin:${st.name}`, trust: 'member' });
+        return { id: Number(r.id) };
+      },
+      async recall(input: any) {
+        need('history', '读取记忆');
+        const svc: any = host.services.get('memory');
+        if (!svc) throw new Error('记忆功能未开启');
+        const rows: any[] = await svc.recall({ query: input.query, scope: input.scope, limit: input.limit ?? 8 });
+        return rows.map((m) => ({ id: m.id, content: m.content, kind: m.kind, scope: m.scope, subject: m.subject || undefined, importance: m.importance }));
+      },
+    };
     return {
       name: st.name,
       logger,
-      dataDir: this.dataDirOf(st.name),
+      dataDir,
       get config() { return st.config; },
       saveConfig: (patch) => host.saveConfig(st.name, { ...st.config, ...patch }),
       kv: {
@@ -363,18 +467,31 @@ export class PluginHost extends EventEmitter {
         set: (k, v) => bridge.store.kvSet(kvNs, k, v),
         delete: (k) => bridge.store.kvSet(kvNs, k, undefined),
       },
-      db: bridge.store.db,
-      migrate: (sql) => bridge.store.db.exec(sql),
-      store: bridge.store,
-      media: bridge.media,
+      get db() { if (v1) return ownDb(); deprecated('db'); return bridge.store.db; },
+      migrate: (sql) => (v1 ? ownDb() : bridge.store.db).exec(sql),
+      get store() { deprecated('store'); return bridge.store; },
+      get media() { deprecated('media'); return bridge.media; },
       qq: {
-        send: async (conv, content, opts) => (await bridge.send(caller, conv, content, opts)).messageIds,
-        call: (action, params = {}) => bridge.callAction(caller, action, params),
+        send: async (conv, content, opts: any = {}) => {
+          need('send', '发消息');
+          const { as, ...rest } = opts ?? {};
+          return (await bridge.send(as ? asCaller(as) : caller, conv, content, rest)).messageIds;
+        },
+        call: (action, params = {}) => { need('onebot', '调用 OneBot 动作'); return bridge.callAction(caller, action, params); },
         get selfId() { return bridge.self?.userId; },
         nameOf: (conv, uid) => bridge.nameOf(conv, uid),
-        format: (m) => bridge.formatLine(m),
+        convName: (conv: string) => bridge.convName(conv),
+        isOwner: (uid: string) => bridge.config.owners.map(String).includes(String(uid)),
+        groups: () => [...bridge.groups.values()].map((g) => ({ ...g })),
+        friends: () => [...bridge.friends.values()].map((f) => ({ ...f })),
+        recent: (conv: string, limit = 30) => {
+          need('history', '读取聊天记录');
+          return bridge.store.recent(convKey(parseConv(conv)), Math.max(1, Math.min(200, limit))).map(toMsg);
+        },
+        format: (m) => { deprecated('qq.format'); return bridge.formatLine(m); },
       },
-      bridge,
+      get memory() { return host.services.has('memory') ? memoryApi : undefined; },
+      get bridge() { deprecated('bridge'); return bridge; },
       command(name, handler, opts: CommandOptions = {}) {
         const names = (Array.isArray(name) ? name : [name]).concat(opts.aliases ?? []);
         st.handlers.push({ kind: 'command', names, handler, opts });
@@ -387,16 +504,33 @@ export class PluginHost extends EventEmitter {
         const map: Record<BridgeEventName, string> = { message: 'message', message_sent: 'message', notice: 'notice', request: 'request', connected: 'self' };
         const wrapped = event === 'message' ? (m: StoredMessage, raw: any) => { if (!m.isSelf) fn(m, raw); }
           : event === 'message_sent' ? (m: StoredMessage) => { if (m.isSelf) fn(m); } : fn;
-        const safe = (...a: any[]) => { try { const r: any = (wrapped as any)(...a); if (r?.catch) r.catch((e: any) => logger.error(e?.message ?? e)); } catch (e: any) { logger.error(e?.message ?? e); } };
+        if (v1) deprecated('on');
+        const safe = guard(`处理 ${event} 事件`, wrapped as any);
         bridge.on(map[event], safe);
         st.unloaders.push(() => bridge.off(map[event], safe));
       },
+      onConnected(fn: () => unknown) {
+        const safe = guard('处理连接事件', () => fn());
+        bridge.on('self', safe);
+        st.unloaders.push(() => bridge.off('self', safe));
+      },
+      onMessageSent(fn: (m: any) => unknown) {
+        const safe = guard('处理已发送消息', (m: StoredMessage) => { if (m.isSelf) return fn(toMsg(m)); });
+        bridge.on('message', safe);
+        st.unloaders.push(() => bridge.off('message', safe));
+      },
+      activity(title: string, detail?: string, level: 'info' | 'warn' | 'error' | 'success' = 'info') {
+        bridge.activity({ kind: level === 'error' ? 'error' : 'info', level, actor: `插件 ${st.manifest.displayName ?? st.name}`, title: String(title).slice(0, 200), detail: detail ? String(detail).slice(0, 4000) : '' });
+      },
       tool(def: PluginToolDef<any>) {
+        need('agent-tools', '给 AI 注册工具');
         const name = def.name.startsWith('qq_') || def.name.startsWith(`${st.name}_`) ? def.name : `${st.name}_${def.name}`.replace(/[^a-zA-Z0-9_-]/g, '_');
         if (extraTools.has(name)) logger.warn(`工具 ${name} 被覆盖`);
         const td: ToolDef = {
           name, title: def.title ?? name, description: def.description, tier: def.tier ?? 'send', readOnly: def.readOnly, input: def.input,
-          selfAudited: def.selfAudited, handler: async ({ caller: c }, args) => def.handler(args, c),
+          selfAudited: def.selfAudited,
+          // 新版插件拿到的是不透明的 AgentCaller，只能原样传回 ctx.qq.send 的 as
+          handler: async ({ caller: c }, args) => def.handler(args, (v1 ? { name: c.name, __caller: c } : c) as any),
         };
         extraTools.set(name, td);
         st.tools.push(name);
@@ -408,12 +542,12 @@ export class PluginHost extends EventEmitter {
         return host.services.get(plugin) as any;
       },
       useOptional(plugin) { return host.services.get(plugin) as any; },
-      route(method, p, handler) { st.routes!.push({ method, path: p, handler }); },
+      route(method, p, handler) { need('http', '注册控制台接口'); st.routes!.push({ method, path: p, handler }); },
       schedule(cron, fn) {
-        st.crons.push(new Cron(cron, { protect: true, catch: (e: any) => logger.error(`定时任务出错：${e?.message ?? e}`) }, async () => { await fn(); }));
+        st.crons.push(new Cron(cron, { protect: true, catch: (e: any) => host.noteError(st, '定时任务', e) }, async () => { await fn(); }));
       },
-      setInterval(fn, ms) { timers.push(setInterval(() => { Promise.resolve().then(fn).catch((e) => logger.error(e?.message ?? e)); }, ms)); },
-      setTimeout(fn, ms) { timers.push(setTimeout(() => { Promise.resolve().then(fn).catch((e) => logger.error(e?.message ?? e)); }, ms)); },
+      setInterval(fn, ms) { timers.push(setInterval(() => { Promise.resolve().then(fn).catch((e) => host.noteError(st, '定时器', e)); }, ms)); },
+      setTimeout(fn, ms) { timers.push(setTimeout(() => { Promise.resolve().then(fn).catch((e) => host.noteError(st, '定时器', e)); }, ms)); },
       onUnload(fn) { st.unloaders.push(fn); },
       listCommands: () => host.list().filter((p) => p.loaded).flatMap((p) => p.commands.map((c: any) => ({ plugin: p.name, names: c.names ?? [], desc: c.desc, usage: c.usage }))),
     };
@@ -459,6 +593,10 @@ export class PluginHost extends EventEmitter {
       if (o.ownerOnly && !base.isOwner) continue;
       if (o.requireMention && base.isGroup && !base.mentioned) continue;
       const e: MessageEvent = Object.create(base);
+      if (!this.allowed(st, 'send')) {
+        const deny = async () => { this.need(st, 'send', '发消息'); };
+        Object.defineProperties(e, { reply: { value: deny }, send: { value: deny }, react: { value: deny } });
+      }
       if (h.kind === 'command') {
         // 不带前缀的命令只在群里 @我 时识别；私聊必须带前缀，避免普通聊天（如"你好"）被命令截走
         const hit = matchCommand(base.text, h.names!, prefixes, base.isGroup && base.mentioned && !base.segments.some((x) => x.type === 'poke'));
@@ -475,8 +613,7 @@ export class PluginHost extends EventEmitter {
       try {
         await h.handler(e);
       } catch (err: any) {
-        st.lastError = `${new Date().toLocaleString('zh-CN')} ${err?.message ?? err}`;
-        log.error(`插件 ${st.name} 处理消息出错：${err?.message ?? err}`);
+        this.noteError(st, '处理消息', err);
         if (h.kind === 'command') await base.reply(`出错了：${err?.message ?? err}`).catch(() => {});
       }
     }
@@ -489,12 +626,12 @@ export class PluginHost extends EventEmitter {
   private dispatchNotice(ev: any) {
     const type = ev.notice_type === 'notify' ? ev.sub_type : ev.notice_type;
     for (const st of this.plugins.values()) if (st.loaded) for (const h of st.noticeHandlers) {
-      if (h.type === '*' || h.type === type || h.type === ev.notice_type) Promise.resolve().then(() => h.fn(ev)).catch((e) => log.error(`插件 ${st.name} 处理通知出错：${e?.message ?? e}`));
+      if (h.type === '*' || h.type === type || h.type === ev.notice_type) Promise.resolve().then(() => h.fn(ev)).catch((e) => this.noteError(st, '处理通知', e));
     }
   }
 
   private dispatchRequest(r: any) {
-    for (const st of this.plugins.values()) if (st.loaded) for (const fn of st.requestHandlers) Promise.resolve().then(() => fn(r)).catch((e) => log.error(`插件 ${st.name} 处理请求出错：${e?.message ?? e}`));
+    for (const st of this.plugins.values()) if (st.loaded) for (const fn of st.requestHandlers) Promise.resolve().then(() => fn(r)).catch((e) => this.noteError(st, '处理申请', e));
   }
 }
 

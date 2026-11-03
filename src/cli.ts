@@ -145,12 +145,17 @@ async function main() {
         const dir = scaffoldPlugin(rest[1], flag('template') ?? 'basic');
         console.log(`已创建插件：${dir}
 守护进程运行中会自动热重载；也可在控制台「插件」页查看。开发文档：docs/plugins.md`);
+      } else if (rest[0] === 'pack' && rest[1]) {
+        const { packPlugin } = await import('./plugins/package.ts');
+        console.log(`已打包：${packPlugin(rest[1], flag('out'))}
+在控制台「插件 → 安装插件」上传这个 zip 即可安装`);
       } else if (rest[0] === 'install' && rest[1]) {
         const dir = await installPlugin(rest[1], { astrbot: flag('astrbot') === 'true' });
         console.log(`已安装到 ${dir}${flag('astrbot') === 'true' ? '（AstrBot 插件，需开启兼容层）' : '，守护进程会自动加载'}`);
       } else {
         console.error(`用法：
   qab plugin new <名称> [--template basic|command|agent-tool|service]
+  qab plugin pack <插件目录> [--out 文件.zip]   打包成插件包（需要 plugin.json）
   qab plugin install <git 仓库地址> [--astrbot]`);
         process.exit(1);
       }
@@ -168,6 +173,7 @@ async function main() {
   qab dsh [install|uninstall]  接入 / 移除 DeepSeek Harness（不带参数显示状态）
   qab migrate qq-bridge [目录]  从 qq-bridge 迁移（人格/配置/表情包/记忆/用量）
   qab plugin new <名称>   从模板创建插件（--template basic|command|agent-tool|service）
+  qab plugin pack <目录>  打包成插件包，可在控制台上传安装
   qab plugin install <git地址> [--astrbot]  从 git 仓库安装插件`);
   }
 }

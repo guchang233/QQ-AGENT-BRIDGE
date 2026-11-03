@@ -7,6 +7,8 @@ export default definePlugin({
   version: '1.0.0',
   description: '在群与群（或群与私聊）之间转发消息',
   defaultEnabled: false,
+  apiVersion: 1,
+  permissions: ['send'],
   config: {
     routes: { type: 'list', default: [], description: '规则，每行一条：来源=>目标，双向用 <=>。例：group:111=>group:222　group:111<=>group:333' },
     format: { type: 'string', default: '[{from}] {name}：', description: '前缀模板：{from} 来源会话名 {name} 发送者' },
@@ -24,7 +26,7 @@ export default definePlugin({
     ctx.onMessage(async (e) => {
       const targets = routes.get(e.conv);
       if (!targets?.length) return;
-      const prefix = ctx.config.format.replaceAll('{from}', ctx.bridge.convName(e.conv) || e.conv).replaceAll('{name}', e.senderName);
+      const prefix = ctx.config.format.replaceAll('{from}', ctx.qq.convName(e.conv) || e.conv).replaceAll('{name}', e.senderName);
       const segs = e.segments.filter((s) => s.type !== 'reply' && (ctx.config.includeMedia || s.type === 'text' || s.type === 'face' || s.type === 'at'))
         .map((s) => (s.type === 'at' ? { type: 'text', data: { text: `@${ctx.qq.nameOf(e.conv, String(s.data.qq)) ?? s.data.qq} ` } } : s));
       if (!segs.length) return;
