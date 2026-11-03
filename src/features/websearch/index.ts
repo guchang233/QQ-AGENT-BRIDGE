@@ -23,12 +23,12 @@ export default definePlugin({
   config: {
     provider: { type: 'select', options: ['auto', 'deepseek', 'bing'], default: 'auto', description: 'auto：先 DeepSeek，失败回退 Bing' },
     apiKey: { type: 'secret', default: '', description: 'DeepSeek API Key（留空则读环境变量或 DSH 已保存的 Key）' },
-    apiKeyEnv: { type: 'string', default: 'DEEPSEEK_API_KEY', description: '环境变量名 / DSH 凭据名' },
-    baseUrl: { type: 'string', default: 'https://api.deepseek.com/anthropic/v1', description: 'DeepSeek Anthropic 兼容端点' },
-    model: { type: 'string', default: 'deepseek-v4-flash', description: '搜索用模型' },
-    maxResults: { type: 'int', default: 8, min: 1, max: 20, description: '每次最多返回结果数' },
-    perHour: { type: 'int', default: 30, description: '每小时最多搜索/抓取次数（防止滥用与费用失控）' },
-    fetchMaxChars: { type: 'int', default: 8000, description: '网页抓取返回的最大字数' },
+    apiKeyEnv: { type: 'string', default: 'DEEPSEEK_API_KEY', description: '环境变量名 / DSH 凭据名', advanced: true },
+    baseUrl: { type: 'string', default: 'https://api.deepseek.com/anthropic/v1', description: 'DeepSeek Anthropic 兼容端点', advanced: true },
+    model: { type: 'string', default: 'deepseek-v4-flash', description: '搜索用模型', advanced: true },
+    maxResults: { type: 'int', default: 8, min: 1, max: 20, description: '每次最多返回结果数', advanced: true },
+    perHour: { type: 'int', default: 30, description: '每小时最多搜索/抓取次数（防止滥用与费用失控）', advanced: true },
+    fetchMaxChars: { type: 'int', default: 8000, description: '网页抓取返回的最大字数', advanced: true },
   },
   setup(ctx) {
     const c = new Proxy({} as typeof ctx.config, { get: (_t, k) => (ctx.config as any)[k] });

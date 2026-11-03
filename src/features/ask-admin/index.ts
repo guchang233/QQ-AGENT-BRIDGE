@@ -18,9 +18,9 @@ export default definePlugin({
   description: 'AI 拿不准时私聊请示管理员；管理员在 QQ 里回复「同意/拒绝」，结果自动写入记忆并通知 AI',
   softDepends: ['memory', 'social'],
   config: {
-    maxPendingPerUser: { type: 'int', default: 2, description: '同一个人同时最多几条待处理请示' },
-    maxPerConvHour: { type: 'int', default: 5, description: '每个会话每小时最多请示几次' },
-    expireHours: { type: 'int', default: 24, description: '多少小时没答复就过期' },
+    maxPendingPerUser: { type: 'int', default: 2, description: '同一个人同时最多几条待处理请示', advanced: true },
+    maxPerConvHour: { type: 'int', default: 5, description: '每个会话每小时最多请示几次', advanced: true },
+    expireHours: { type: 'int', default: 24, description: '多少小时没答复就过期', advanced: true },
   },
   setup(ctx) {
     const c = new Proxy({} as typeof ctx.config, { get: (_t, k) => (ctx.config as any)[k] });

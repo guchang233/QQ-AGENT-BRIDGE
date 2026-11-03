@@ -24,15 +24,31 @@ const snapshot = () => (hasSchema.value ? JSON.stringify(form.value) : rawJson.v
 const dirty = computed(() => snapshot() !== baseline.value);
 watch(() => props.plugin.name, reset, { immediate: true });
 
-/** 按 group 字段分组 */
-const groups = computed(() => {
+/** 依赖其他字段的项：条件不满足时不显示（比如选了 edge 语音，就不显示 OpenAI 的密钥） */
+const visible = (s: any) => !s.visibleIf || Object.entries<any>(s.visibleIf).every(([k, v]) => (Array.isArray(v) ? v.includes(form.value[k]) : form.value[k] === v));
+const isDefault = (k: string, s: any) => s.default === undefined || JSON.stringify(form.value[k] ?? null) === JSON.stringify(s.default ?? null);
+const restore = (k: string, s: any) => { form.value[k] = JSON.parse(JSON.stringify(s.default ?? null)); };
+/** 按 group 分组；常用项和高级项分开 */
+function grouped(advanced: boolean) {
   const out = new Map<string, [string, any][]>();
   for (const [k, s] of Object.entries<any>(props.plugin.schema ?? {})) {
+    if (!!s.advanced !== advanced || !visible(s)) continue;
     const g = s.group ?? '';
     out.set(g, [...(out.get(g) ?? []), [k, s]]);
   }
   return [...out];
-});
+}
+const basicGroups = computed(() => grouped(false));
+const advGroups = computed(() => grouped(true));
+const advCount = computed(() => advGroups.value.reduce((n, [, f]) => n + f.length, 0));
+const advChanged = computed(() => advGroups.value.reduce((n, [, f]) => n + f.filter(([k, s]) => !isDefault(k, s)).length, 0));
+const showAdv = ref(false);
+// 只有高级项的，直接展开
+watch(() => props.plugin.name, () => { showAdv.value = !basicGroups.value.length; }, { immediate: true });
+const sections = computed(() => [
+  { key: 'basic', groups: basicGroups.value },
+  ...(showAdv.value ? [{ key: 'adv', groups: advGroups.value }] : []),
+]);
 /** 这些类型需要整行宽度，其余放在说明右边 */
 const wide = (s: any) => s.type === 'list' || s.type === 'text' || s.type === 'json';
 
@@ -56,11 +72,13 @@ async function save() {
 <template>
   <div class="config">
     <template v-if="hasSchema">
-      <section v-for="[g, fields] in groups" :key="g" class="group">
+      <template v-for="sec in sections" :key="sec.key">
+      <button v-if="sec.key === 'adv'" type="button" class="adv-toggle open" @click="showAdv = false">▾ 高级设置<span class="hint">　{{ advCount }} 项{{ advChanged ? `，改过 ${advChanged} 项` : '' }}，一般不用动</span></button>
+      <section v-for="[g, fields] in sec.groups" :key="sec.key + g" class="group" :class="{ adv: sec.key === 'adv' }">
         <h3 v-if="g">{{ g }}</h3>
         <div class="rows">
           <div v-for="[k, s] in fields" :key="k" class="row" :class="{ wide: wide(s) }">
-            <label class="label">{{ s.description || k }}<span v-if="s.hint" class="hint">{{ s.hint }}</span></label>
+            <label class="label">{{ s.description || k }}<span v-if="!isDefault(k, s)" class="changed">已改 · <a @click.prevent="restore(k, s)">恢复默认</a></span><span v-if="s.hint" class="hint">{{ s.hint }}</span></label>
             <div class="control">
               <n-switch v-if="s.type === 'bool'" v-model:value="form[k]" />
               <n-input-number v-else-if="s.type === 'int' || s.type === 'float'" v-model:value="form[k]" size="small" :step="s.type === 'float' ? 0.05 : 1" :min="s.min" :max="s.max" style="width: 150px" />
@@ -74,6 +92,8 @@ async function save() {
           </div>
         </div>
       </section>
+      </template>
+      <button v-if="advCount && !showAdv" type="button" class="adv-toggle" @click="showAdv = true">▸ 高级设置<span class="hint">　{{ advCount }} 项{{ advChanged ? `，改过 ${advChanged} 项` : '' }}，一般不用动</span></button>
     </template>
     <template v-else>
       <n-text depth="3" style="font-size: 12px">该插件没有声明配置项，可以直接编辑 JSON：</n-text>
@@ -100,6 +120,12 @@ async function save() {
 .label .hint { display: block; }
 .control { flex: none; display: flex; justify-content: flex-end; min-width: 0; }
 .row.wide .control { justify-content: flex-start; }
+.adv-toggle { display: block; width: 100%; margin: 4px 0 12px; padding: 8px 12px; border: 1px dashed rgba(128,128,128,.3); border-radius: 10px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.adv-toggle:hover { border-color: rgba(18,183,245,.6); }
+.adv-toggle.open { border-style: solid; border-color: transparent; padding-left: 2px; }
+.group.adv .rows { background: rgba(128,128,128,.03); }
+.changed { margin-left: 8px; font-size: 11.5px; color: #c08000; }
+.changed a { color: #12b7f5; cursor: pointer; }
 .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 0; border-top: 1px solid rgba(128,128,128,.2); }
 @media (max-width: 640px) {
   .row { flex-direction: column; align-items: stretch; gap: 6px; }

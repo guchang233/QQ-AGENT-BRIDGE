@@ -25,6 +25,10 @@ export interface ConfigField<T extends FieldType = FieldType> {
   max?: number;
   /** 控制台中归入的分组标题 */
   group?: string;
+  /** 高级设置：控制台里默认折叠 */
+  advanced?: boolean;
+  /** 只在其他字段取这些值时显示，如 { ttsProvider: 'openai' } 或 { ttsProvider: ['openai', 'http'] } */
+  visibleIf?: Record<string, unknown>;
 }
 export type ConfigSchema = Record<string, ConfigField>;
 

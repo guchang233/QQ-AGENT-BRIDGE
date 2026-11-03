@@ -290,7 +290,13 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   });
 
   // ------------------------------------------------------------------ 插件
-  app.get('/api/plugins', async () => plugins.list());
+  // 插件/功能里的密钥（API Key 等）不原样发给浏览器；保存时传回掩码表示不修改
+  const secretKeys = (schema: any) => Object.entries<any>(schema ?? {}).filter(([, s]) => s?.type === 'secret').map(([k]) => k);
+  app.get('/api/plugins', async () => plugins.list().map((p: any) => {
+    const keys = secretKeys(p.schema);
+    if (!keys.length) return p;
+    return { ...p, config: Object.fromEntries(Object.entries(p.config ?? {}).map(([k, v]) => [k, keys.includes(k) && v ? MASK : v])) };
+  }));
   app.get('/api/traces', async () => bridge.tracer.recent());
   app.post('/api/plugins/:name/:op', async (req, reply) => {
     const { name, op } = req.params as { name: string; op: string };
@@ -341,7 +347,10 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   });
   app.put('/api/plugins/:name/config', async (req) => {
     const { name } = req.params as { name: string };
-    plugins.saveConfig(name, req.body as any);
+    const body = { ...(req.body as any) };
+    const cur = plugins.plugins.get(name);
+    for (const k of secretKeys(cur?.schema)) if (body[k] === MASK) body[k] = cur!.config[k];
+    plugins.saveConfig(name, body);
     if (plugins.plugins.get(name)?.loaded && plugins.plugins.get(name)?.kind === 'native') await plugins.reload(name);
     return { ok: true };
   });
@@ -529,9 +538,10 @@ function maskConfig(c: Config) {
 function unmaskConfig(incoming: any, cur: Config) {
   const x = structuredClone(incoming ?? {});
   x.onebot ??= {}; x.server ??= {};
-  if (x.onebot.accessToken === MASK) x.onebot.accessToken = cur.onebot.accessToken;
+  // 密钥类字段：掩码或留空都表示「不修改」，免得整页保存时把 token 清掉
+  if (x.onebot.accessToken === MASK || x.onebot.accessToken === '') x.onebot.accessToken = cur.onebot.accessToken;
   if (x.onebot.httpToken === MASK) x.onebot.httpToken = cur.onebot.httpToken;
-  if (x.server.consolePassword === MASK) x.server.consolePassword = cur.server.consolePassword;
+  if (x.server.consolePassword === MASK || !x.server.consolePassword) x.server.consolePassword = cur.server.consolePassword;
   x.server.sessionSecret = cur.server.sessionSecret;
   x.agents ??= {}; x.agents.tokens = cur.agents.tokens; // token 走单独接口
   x.features = cur.features; // 内置功能的设置走 /api/plugins/:name/config

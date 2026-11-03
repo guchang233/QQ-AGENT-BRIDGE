@@ -373,7 +373,7 @@ describe('系统插件', () => {
     });
     const before = bridge.drivers.get('dsh');
     bridge.registerDriver(driver);
-    host.saveConfig('social', { ...host.plugins.get('social')!.config, digestEnabled: true, digestEveryMessages: 10, batchWindowSec: 0 });
+    host.saveConfig('social', { ...host.plugins.get('social')!.config, digestEnabled: true, digestEveryMessages: 10, batchWindowSec: 0, maxWakePerMinute: 50, maxWakePerHour: 500 }); // 前面的测试可能已经用掉了这个群每分钟的唤醒次数
     await host.reload('social');
     const svc: any = host.services.get('social');
     const id = String(mock.pushGroupMessage(111, 30003, [{ type: 'text', data: { text: '我下个月要搬去成都了' } }]));
@@ -403,7 +403,7 @@ describe('系统插件', () => {
     const after = await callToolStateless(bridge, caller, 'qq_send', { conv: 'group:111', message: '恢复发言', convToken });
     expect(after.isError).toBeFalsy();
 
-    host.saveConfig('social', { ...host.plugins.get('social')!.config, digestEnabled: false, batchWindowSec: 8 });
+    host.saveConfig('social', { ...host.plugins.get('social')!.config, digestEnabled: false, batchWindowSec: 8, maxWakePerMinute: 2, maxWakePerHour: 20 });
     if (before) bridge.drivers.set('dsh', before); else bridge.drivers.delete('dsh');
     await host.reload('social');
   });

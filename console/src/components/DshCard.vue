@@ -20,6 +20,7 @@ async function load() {
 
 // 模型目录：从 DSH 读取实际可用的服务商和模型，只能从中选择
 const { catalog, loading: loadingModels, load: loadModels, providerOptions, modelOptions, effortOptions, invalid: invalidModel, pickProvider, pickModel } = useDshModels(form);
+const showAdv = ref(false);
 const status = computed(() => info.value?.drivers?.find((d: any) => d.id === 'dsh'));
 const setup = computed(() => info.value?.dsh?.setup);
 const stateTag = computed(() => ({ ready: ['success', '已连接'], connecting: ['warning', '连接中'], error: ['error', '异常'], disabled: ['default', '未启用'] } as any)[status.value?.state ?? 'disabled']);
@@ -104,6 +105,9 @@ onUnmounted(off);
         <n-form-item label="模型"><n-input v-model:value="form.model" placeholder="deepseek-flash" /></n-form-item>
       </template>
       <n-form-item label="思考强度"><n-select v-model:value="form.reasoningEffort" :options="effortOptions" /></n-form-item>
+    </n-form>
+    <button type="button" class="adv-toggle" @click="showAdv = !showAdv">{{ showAdv ? '▾' : '▸' }} 高级设置<span class="adv-hint">　预设、卡住判定、工具审批、地址等，一般不用动</span></button>
+    <n-form v-if="showAdv" class="form-2" :label-placement="isNarrow ? 'top' : 'left'" label-width="72" size="small">
       <n-form-item label="预设"><n-input v-model:value="form.preset" /></n-form-item>
       <n-form-item label="卡住判定"><n-input-number v-model:value="form.stallMinutes" :min="1" :max="120" style="width: 110px"><template #suffix>分钟</template></n-input-number><span class="switch-hint">一轮这么久没有任何进展就自动结束</span></n-form-item>
       <n-form-item label="工具审批"><n-select v-model:value="form.approvals" :options="[{ label: '一律拒绝（推荐）', value: 'reject' }, { label: '交给控制台审批', value: 'console' }]" /></n-form-item>
@@ -123,4 +127,6 @@ onUnmounted(off);
 
 <style scoped>
 .sec { margin: 12px 0 6px; font-size: 13px; font-weight: 600; }
+.adv-toggle { display: block; margin: 0 0 10px; padding: 4px 0; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.adv-hint { font-size: 12px; opacity: .6; }
 </style>

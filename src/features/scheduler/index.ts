@@ -33,7 +33,7 @@ export default definePlugin({
   description: '定时消息、提醒、周期任务（Agent 与群友都可使用）',
   config: {
     membersCanUse: { type: 'bool', default: true, description: '允许普通成员使用 /提醒' },
-    maxJobsPerUser: { type: 'int', default: 10, description: '每人最多同时存在的提醒数' },
+    maxJobsPerUser: { type: 'int', default: 10, description: '每人最多同时存在的提醒数', advanced: true },
   },
   setup(ctx) {
     ctx.migrate(`CREATE TABLE IF NOT EXISTS sched_jobs (

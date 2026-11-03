@@ -8,8 +8,8 @@ export default definePlugin({
   description: '发言排行、活跃时段、日报（基于本地记录）',
   config: {
     dailyReport: { type: 'bool', default: false, description: '每天定时在群里发日报' },
-    reportCron: { type: 'string', default: '0 23 * * *', description: '日报时间（cron）' },
-    reportGroups: { type: 'list', default: [], description: '发日报的群号' },
+    reportCron: { type: 'string', default: '0 23 * * *', description: '日报时间（cron）', advanced: true, visibleIf: { dailyReport: true } },
+    reportGroups: { type: 'list', default: [], description: '发日报的群号', visibleIf: { dailyReport: true } },
   },
   setup(ctx) {
     function compute(conv: string, sinceMs: number) {

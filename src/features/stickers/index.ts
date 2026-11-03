@@ -17,12 +17,12 @@ export default definePlugin({
   description: '表情包收藏、认知笔记、同步 QQ 收藏表情、自动收藏与发送',
   config: {
     syncQQFavorites: { type: 'bool', default: true, description: '连接后自动同步 QQ 账号的收藏表情到本地库' },
-    syncMax: { type: 'int', default: 200, description: '同步时最多拉取的收藏表情数量' },
-    syncIntervalMin: { type: 'int', default: 360, description: '定期同步间隔（分钟，0 = 只在启动时同步）' },
+    syncMax: { type: 'int', default: 200, description: '同步时最多拉取的收藏表情数量', advanced: true },
+    syncIntervalMin: { type: 'int', default: 360, description: '定期同步间隔（分钟，0 = 只在启动时同步）', advanced: true },
     autoCollect: { type: 'bool', default: false, description: '自动收藏群友发送的表情（图片表情 / 大表情）' },
-    autoCollectPerHour: { type: 'int', default: 10, description: '自动收藏每小时上限' },
-    addToQQFavorites: { type: 'bool', default: false, description: '收藏时同时加入 QQ 账号的收藏表情' },
-    previewMax: { type: 'int', default: 8, description: 'qq_list_stickers 预览时最多附带的图片数' },
+    autoCollectPerHour: { type: 'int', default: 10, description: '自动收藏每小时上限', advanced: true },
+    addToQQFavorites: { type: 'bool', default: false, description: '收藏时同时加入 QQ 账号的收藏表情', advanced: true },
+    previewMax: { type: 'int', default: 8, description: 'qq_list_stickers 预览时最多附带的图片数', advanced: true },
   },
   setup(ctx) {
     const bridge = ctx.bridge;

@@ -9,11 +9,11 @@ export default definePlugin({
   defaultEnabled: false,
   config: {
     friend: { type: 'select', options: ['manual', 'approve', 'reject', 'keyword'], default: 'manual', description: '好友申请：manual 人工 / approve 全部同意 / reject 全部拒绝 / keyword 附言含关键词则同意' },
-    friendKeywords: { type: 'list', default: [], description: '好友申请同意关键词' },
+    friendKeywords: { type: 'list', default: [], description: '好友申请同意关键词', visibleIf: { friend: 'keyword' } },
     groupJoin: { type: 'select', options: ['manual', 'approve', 'keyword'], default: 'manual', description: '他人申请加入我管理的群' },
-    groupJoinKeywords: { type: 'list', default: [], description: '加群申请同意关键词' },
+    groupJoinKeywords: { type: 'list', default: [], description: '加群申请同意关键词', visibleIf: { groupJoin: 'keyword' } },
     groupInvite: { type: 'select', options: ['manual', 'owner', 'approve', 'reject'], default: 'owner', description: '被邀请入群：owner 仅管理员邀请时同意' },
-    notifyOwner: { type: 'bool', default: true, description: '私聊通知管理员处理结果' },
+    notifyOwner: { type: 'bool', default: true, description: '私聊通知管理员处理结果', advanced: true },
   },
   setup(ctx) {
     const c = ctx.config;
