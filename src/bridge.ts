@@ -196,6 +196,22 @@ export class Bridge extends EventEmitter {
     this.store.close();
   }
 
+  /** 打开或关闭一个会话（「回复与人格设置」的开关、/仿真 开|关 都走这里） */
+  setConvEnabled(conv: string, on: boolean) {
+    const c = parseConv(conv);
+    const cfg = structuredClone(this.config);
+    const a = cfg.access;
+    const [allow, deny] = c.type === 'group' ? ['groups', 'denyGroups'] as const : ['private', 'denyPrivate'] as const;
+    const without = (l: string[]) => l.filter((x) => x !== c.id);
+    if (on) {
+      a[deny] = without(a[deny]);
+      if (a.mode === 'allowlist' && !a[allow].includes(c.id)) a[allow] = [...a[allow], c.id];
+    } else if (a.mode === 'allowlist') a[allow] = without(a[allow]);
+    else if (!a[deny].includes(c.id)) a[deny] = [...a[deny], c.id];
+    this.updateConfig(cfg);
+    return this.policy.convAllowed(c);
+  }
+
   updateConfig(next: Config) {
     this.config = next;
     saveConfig(next);

@@ -70,7 +70,7 @@ onUnmounted(() => { off(); clearTimeout(t); });
 <template>
   <div class="page">
     <n-card v-if="sum && !sum.total.turns" size="small">
-      <div class="toolbar"><span class="hint grow">还没有用量记录。接入 DeepSeek Harness 并开启仿真后，这里会显示每一轮的 Token 与费用。</span><n-button size="tiny" quaternary @click="openPrices">价目设置</n-button></div>
+      <div class="toolbar"><span class="hint grow">还没有用量记录。接入 DeepSeek Harness 后，这里会显示每一轮的 Token 与费用。</span><n-button size="tiny" quaternary @click="openPrices">价目设置</n-button></div>
     </n-card>
     <template v-else-if="sum">
       <div class="sums">

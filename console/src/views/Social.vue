@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { h, onMounted, onUnmounted, ref } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
-  NCard, NSpace, NButton, NSwitch, NTag, NSelect, NDataTable, NAlert, NInput, NModal, NText, NCode, NPopconfirm, NEmpty, useMessage, type DataTableColumns,
+  NCard, NSpace, NButton, NSwitch, NTag, NSelect, NDataTable, NAlert, NInput, NModal, NText, NCode, NPopconfirm, NEmpty, NRadioGroup, NRadio, NTooltip, useMessage, type DataTableColumns,
 } from 'naive-ui';
 import { api, onPush, fmtTime } from '../api';
 import PageHint from '../components/PageHint.vue';
@@ -10,6 +10,20 @@ import PageHint from '../components/PageHint.vue';
 const msg = useMessage();
 const router = useRouter();
 const convs = ref<any[]>([]);
+const scope = ref<'all' | 'allowlist'>('all');
+const q = ref('');
+const onlyOn = ref(false);
+const shown = computed(() => {
+  const k = q.value.trim().toLowerCase();
+  return convs.value
+    .filter((r) => (!onlyOn.value || r.enabled) && (!k || `${r.name ?? ''} ${r.conv}`.toLowerCase().includes(k)))
+    // 启用的、最近唤醒过的排前面
+    .sort((a, b) => Number(b.enabled) - Number(a.enabled) || (b.lastWakeAt ?? 0) - (a.lastWakeAt ?? 0));
+});
+async function setScope(mode: 'all' | 'allowlist') {
+  try { await api('/api/p/social/scope', { method: 'PUT', body: { mode } }); scope.value = mode; msg.success(mode === 'all' ? '已改为全部启用' : '已改为只启用勾选的'); load(); }
+  catch (e: any) { msg.error(e.message); }
+}
 const roles = ref<any[]>([]);
 const err = ref('');
 const editing = ref<{ name: string; content: string; isNew?: boolean } | null>(null);
@@ -29,10 +43,12 @@ async function decideAsk(id: number, approve: boolean, note = '') {
 
 async function load() {
   try {
-    [convs.value, roles.value] = await Promise.all([api('/api/p/social/convs'), api('/api/p/social/roles')]);
+    let sc: any;
+    [convs.value, roles.value, sc] = await Promise.all([api('/api/p/social/convs'), api('/api/p/social/roles'), api('/api/p/social/scope')]);
+    scope.value = sc.mode;
     loadAsks(); loadBubbles();
     err.value = '';
-  } catch (e: any) { err.value = e.status === 404 ? '「仿真与人格」插件未启用：请在「插件」页开启 social' : e.message; }
+  } catch (e: any) { err.value = e.status === 404 ? '「回复与人格设置」没有开启：打开右上角的开关' : e.message; }
 }
 async function op(conv: string, o: string, body?: unknown) {
   try { await api(`/api/p/social/convs/${conv}/${o}`, { body: body ?? {} }); msg.success('完成'); setTimeout(load, 600); } catch (e: any) { msg.error(e.message); }
@@ -48,7 +64,9 @@ async function showPreview(conv: string) { preview.value = (await api(`/api/p/so
 
 const MODE: Record<string, [string, any]> = { active: ['活跃', 'success'], diving: ['潜水', 'info'], sleeping: ['沉睡', 'default'] };
 const cols: DataTableColumns<any> = [
-  { title: '启用', key: 'enabled', width: 64, render: (r) => h(NSwitch, { size: 'small', value: r.enabled, onUpdateValue: (v: boolean) => op(r.conv, v ? 'enable' : 'disable') }) },
+  { title: '启用', key: 'enabled', width: 64, render: (r) => r.locked
+    ? h(NTooltip, null, { trigger: () => h(NSwitch, { size: 'small', value: true, disabled: true }), default: () => '管理员私聊始终启用' })
+    : h(NSwitch, { size: 'small', value: r.enabled, onUpdateValue: (v: boolean) => op(r.conv, v ? 'enable' : 'disable') }) },
   { title: '会话', key: 'conv', render: (r) => h('div', [h('div', r.name || r.conv), h('div', { style: 'font-size:12px;opacity:.55' }, r.conv)]) },
   { title: '状态', key: 'mode', width: 110, render: (r) => h(NSpace, { size: 4 }, { default: () => [
     h(NTag, { size: 'small', type: MODE[r.mode]?.[1] }, { default: () => MODE[r.mode]?.[0] ?? r.mode }),
@@ -75,9 +93,9 @@ onUnmounted(() => { off(); clearTimeout(t); });
 <template>
   <div class="page">
     <n-alert v-if="err" type="warning">{{ err }}</n-alert>
-    <PageHint text="让 Agent 像真人群友一样自主聊天：被叫到时唤醒，自己决定说不说、接下来潜水还是沉睡。">
+    <PageHint text="决定机器人在哪些会话里回复、用什么人格。AI 像真人群友一样：被叫到时醒来，自己决定说不说、接下来潜水还是沉睡。">
       需要先在「Agent 接入」页接入 DeepSeek Harness。唤醒参数（关键词、概率、主动发言等）在
-      <a style="cursor: pointer; color: #12b7f5" @click="router.push('/features/social/config')">配置</a> 页调整。
+      <a style="cursor: pointer; color: #12b7f5" @click="router.push('/features/social/config')">设置</a> 页调整。
       QQ 里管理员也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
     </PageHint>
 
@@ -93,7 +111,23 @@ onUnmounted(() => { off(); clearTimeout(t); });
     </n-card>
 
     <n-card title="会话" size="small">
-      <n-data-table :columns="cols" :data="convs" size="small" :scroll-x="950" :row-key="(r: any) => r.conv" />
+      <div class="scope">
+        <span class="label">启用模式</span>
+        <n-radio-group :value="scope" size="small" @update:value="setScope">
+          <n-radio value="all">全部启用</n-radio>
+          <n-radio value="allowlist">只启用勾选的</n-radio>
+        </n-radio-group>
+      </div>
+      <div class="hint scope-hint">
+        {{ scope === 'all' ? '所有群聊和私聊都会回复；不想让它回复的会话，把开关关掉。' : '只在打开开关的会话里回复；管理员私聊始终启用。' }}
+        没启用的会话，AI 不会回复，Claude Code 等 MCP 客户端和插件也看不到、发不了。
+      </div>
+      <div class="filters">
+        <n-input v-model:value="q" size="small" placeholder="搜索群名、昵称或号码" clearable style="max-width: 260px" />
+        <n-switch v-model:value="onlyOn" size="small" /><span class="hint">只看启用的</span>
+        <span class="hint grow" style="text-align: right">共 {{ convs.length }} 个，启用 {{ convs.filter((r) => r.enabled).length }} 个</span>
+      </div>
+      <n-data-table :columns="cols" :data="shown" size="small" :scroll-x="950" :row-key="(r: any) => r.conv" :pagination="{ pageSize: 20 }" />
     </n-card>
 
     <n-card v-if="bubbles.length" title="冒泡" size="small">
@@ -144,4 +178,9 @@ onUnmounted(() => { off(); clearTimeout(t); });
 .roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
 .role { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border: 1px solid rgba(128,128,128,.18); border-radius: 6px; }
 .line { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.scope { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.scope .label { font-size: 13px; font-weight: 600; }
+.scope-hint { margin: 4px 0 10px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.filters .grow { flex: 1; }
 </style>

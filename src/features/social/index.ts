@@ -14,13 +14,12 @@ import {
  */
 export default definePlugin({
   name: 'social',
-  displayName: '仿真与人格',
+  displayName: '回复与人格设置',
   version: '1.0.0',
-  description: '由 Agent 驱动（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言、按会话绑定人格卡',
+  description: '在哪些会话回复（全部启用 / 只启用勾选的）、每个会话用什么人格；由 Agent（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言',
   softDepends: ['memory'],
   config: {
     driver: { type: 'select', options: ['dsh'], default: 'dsh', description: 'Agent 驱动', group: '基本' },
-    convs: { type: 'list', default: [], description: '启用仿真的会话（group:群号 / private:QQ），留空 = 不启用', group: '基本' },
     defaultRole: { type: 'string', default: '', description: '默认人格卡名（roles/ 目录下的文件名，不含 .md；留空 = 默认群友）', group: '人格' },
     roleBindings: { type: 'list', default: [], description: '按会话绑定人格：会话=>人格名，如 group:123=>小鲸鱼', group: '人格' },
     roleMaxChars: { type: 'int', default: 8000, min: 1000, max: 20000, description: '人格卡注入上限（字）', group: '人格' },
@@ -70,8 +69,43 @@ export default definePlugin({
     });
 
     // ------------------------------------------------------------ 状态
-    const enabled = { has: (conv: string) => c.convs.some((x) => { try { return convKey(parseConv(x)) === conv; } catch { return false; } }),
-      list: () => [...new Set(c.convs.map((x) => convKey(parseConv(x))))], get size() { return this.list().length; } };
+    // 会话是否启用只看一处：access（启用模式 + 每个会话的开关）。这里不再有自己的会话列表
+    const allowed = (conv: string) => { try { return bridge.policy.convAllowed(parseConv(conv)); } catch { return false; } };
+    const enabled = {
+      has: allowed,
+      /** 已知的、启用了的会话（调度器、后台提炼、冒泡遍历用） */
+      list: (): string[] => [...new Set([...states.keys(), ...bridge.store.conversations().map((x) => x.conv)])].filter(allowed),
+      get size() { return this.list().length; },
+    };
+    // 旧版本的「仿真会话列表」并进启用模式：只在列表里的会话回复，升级后仍然只在这些会话回复
+    const legacy = (ctx.config as any).convs;
+    if (Array.isArray(legacy)) {
+      const cfg = structuredClone(bridge.config);
+      const a = cfg.access;
+      const keys = legacy.flatMap((x: string) => { try { return [parseConv(x)]; } catch { return []; } });
+      let note = '';
+      if (keys.length) {
+        const inList = (t: 'group' | 'private', id: string) => keys.some((k) => k.type === t && k.id === id);
+        if (a.mode === 'allowlist') {
+          const dropped = [...a.groups.filter((id) => !inList('group', id)).map((id) => `group:${id}`), ...a.private.filter((id) => !inList('private', id)).map((id) => `private:${id}`)];
+          a.groups = a.groups.filter((id) => inList('group', id));
+          a.private = a.private.filter((id) => inList('private', id));
+          if (dropped.length) note = `这些会话在白名单里但没开仿真，已关闭：${dropped.join('、')}`;
+        } else {
+          a.mode = 'allowlist';
+          a.groups = keys.filter((k) => k.type === 'group' && !a.denyGroups.includes(k.id)).map((k) => k.id);
+          a.private = keys.filter((k) => k.type === 'private' && !a.denyPrivate.includes(k.id)).map((k) => k.id);
+          note = '原来只在仿真列表里的会话回复，已改为「只启用勾选的」，并勾选了这些会话';
+        }
+      } else if (a.mode === 'all') note = '原来的仿真列表是空的（哪里都不回复）；现在是「全部启用」，除关掉的会话外都会回复';
+      bridge.updateConfig(cfg);
+      const { convs: _old, ...rest } = ctx.config as any;
+      bridge.pluginHost?.saveConfig(ctx.name, rest); // 整体替换（ctx.saveConfig 是合并，删不掉旧键）
+      ctx.logger.info(`会话启用方式已合并到「回复与人格设置」。${note}`);
+      if (note) bridge.activity({ kind: 'info', level: 'warn', actor: '升级', title: '会话开关已合并到「回复与人格设置」', detail: note });
+    }
+    /** 收到 @ 或私聊但会话没启用：每个会话提示一次，免得以为机器人坏了 */
+    const ignoredHint = new Set<string>();
     const states = new Map<string, ConvState>();
     const stateOf = (conv: string): ConvState => {
       let s = states.get(conv);
@@ -124,7 +158,13 @@ export default definePlugin({
 
     // ------------------------------------------------------------ 消息 → 唤醒判定
     ctx.on('message', (m: StoredMessage) => {
-      if (!enabled.has(m.conv)) return;
+      if (!enabled.has(m.conv)) {
+        if ((m.mentioned || m.conv.startsWith('private:')) && !ignoredHint.has(m.conv)) {
+          ignoredHint.add(m.conv);
+          bridge.activity({ kind: 'info', level: 'warn', conv: m.conv, actor: m.senderName, title: '收到 @ 或私聊，但这个会话没启用，AI 不会回复', detail: `在「回复与人格设置」里打开这个会话的开关（当前模式：${bridge.config.access.mode === 'all' ? '全部启用，这个会话被关掉了' : '只启用勾选的，这个会话没勾选'}）` });
+        }
+        return;
+      }
       // 稍等插件处理：被命令/请示答复等"消费"的消息不唤醒 AI
       ctx.setTimeout(() => onIncoming(m), 400);
     });
@@ -358,7 +398,7 @@ export default definePlugin({
       handler: (a, caller) => {
         const conv = convKey(parseConv(a.conv));
         bridge.policy.assertConv(caller, parseConv(conv));
-        if (!enabled.has(conv)) throw new Error('该会话未启用仿真');
+        if (!enabled.has(conv)) throw new Error('这个会话没有启用（在「回复与人格设置」里打开）');
         const s = stateOf(conv);
         const now = Date.now();
         if (a.mode === 'sleep') {
@@ -402,10 +442,9 @@ export default definePlugin({
 
     // ------------------------------------------------------------ 管理员指令（兼容 qq-bridge 的说法）
     const setEnabled = (conv: string, on: boolean) => {
-      const list = new Set(enabled.list());
-      if (on) list.add(conv); else list.delete(conv);
-      ctx.saveConfig({ convs: [...list] }); // 立即生效（插件读取实时配置）
-      bridge.activity({ kind: 'info', conv, actor: 'owner', title: on ? '已开启仿真' : '已关闭仿真' });
+      ignoredHint.delete(conv);
+      const now = bridge.setConvEnabled(conv, on);
+      bridge.activity({ kind: 'info', conv, actor: 'owner', title: on ? '已启用这个会话' : now ? '管理员私聊始终启用，不能关闭' : '已关闭这个会话' });
     };
     const bindRole = (conv: string, role: string | null) => {
       const rest = c.roleBindings.filter((l) => convKey(parseConv(l.split('=>')[0].trim())) !== conv);
@@ -414,14 +453,14 @@ export default definePlugin({
 
     ctx.command(['仿真'], async (e) => {
       const op = e.args[0] ?? '状态';
-      if (op === '开') { setEnabled(e.conv, true); return e.reply('已在本会话开启仿真'); }
-      if (op === '关') { setEnabled(e.conv, false); return e.reply('已在本会话关闭仿真'); }
+      if (op === '开') { setEnabled(e.conv, true); return e.reply('已启用本会话'); }
+      if (op === '关') { setEnabled(e.conv, false); return e.reply('已关闭本会话，AI 不再回复这里'); }
       if (op === '唤醒') { schedule(stateOf(e.conv), 'manual', engineCfg()); return e.reply('好，马上看一眼'); }
       if (op === '重置') { await driver()?.reset(e.conv); states.delete(e.conv); ctx.kv.delete(`state:${e.conv}`); return e.reply('已重置本会话的 AI 上下文'); }
       const s = stateOf(e.conv);
       const d = driver();
-      return e.reply(`仿真：${enabled.has(e.conv) ? '开' : '关'}｜驱动：${d ? `${d.label}（${d.status().state}）` : '无'}｜${modeText(s)}｜人格：${roleOf(e.conv)}｜已唤醒 ${s.wakes} 次`);
-    }, { desc: '仿真开关与状态', usage: '[开|关|唤醒|重置|状态]', ownerOnly: true });
+      return e.reply(`本会话：${enabled.has(e.conv) ? '已启用' : '未启用'}｜驱动：${d ? `${d.label}（${d.status().state}）` : '无'}｜${modeText(s)}｜人格：${roleOf(e.conv)}｜已唤醒 ${s.wakes} 次`);
+    }, { desc: '本会话的启用开关与状态', usage: '[开|关|唤醒|重置|状态]', ownerOnly: true });
 
     ctx.command(['人格', '角色'], async (e) => {
       const arg = e.argText.trim();
@@ -442,12 +481,31 @@ export default definePlugin({
     ctx.onRegex(/^退出角色扮演$/, async (e) => { bindRole(e.conv, null); await e.reply('已退出角色扮演'); e.stop(); }, { ownerOnly: true, priority: 50 });
 
     // ------------------------------------------------------------ 控制台接口
+    ctx.route('GET', 'scope', () => ({ mode: bridge.config.access.mode, owners: bridge.config.owners }));
+    ctx.route('PUT', 'scope', ({ body }) => {
+      const mode = body?.mode === 'allowlist' ? 'allowlist' : 'all';
+      const cfg = structuredClone(bridge.config);
+      // 切换模式时保持当前看到的启用状态不变：全部→勾选 时把现在启用的已知会话都勾上
+      if (mode === 'allowlist' && cfg.access.mode === 'all') {
+        const on = enabled.list().map((k) => parseConv(k));
+        cfg.access.groups = on.filter((k) => k.type === 'group').map((k) => k.id);
+        cfg.access.private = on.filter((k) => k.type === 'private').map((k) => k.id);
+      }
+      cfg.access.mode = mode;
+      bridge.updateConfig(cfg);
+      ignoredHint.clear();
+      return { mode };
+    });
     ctx.route('GET', 'convs', () => {
-      const all = new Set([...enabled.list(), ...bridge.store.conversations().slice(0, 50).map((x) => x.conv)]);
+      // 全部已知会话：聊过天的、群列表、好友列表，方便在「只启用勾选的」模式下找到要勾的会话
+      const all = new Set([...enabled.list(), ...bridge.store.conversations().map((x) => x.conv),
+        ...[...bridge.groups.keys()].map((id) => `group:${id}`), ...[...bridge.friends.keys()].map((id) => `private:${id}`)]);
+      const owners = new Set(bridge.config.owners.map(String));
       const d = driver();
       return [...all].map((conv) => {
         const s = stateOf(conv);
-        return { conv, name: bridge.convName(conv), enabled: enabled.has(conv), mode: s.mode, sleepUntil: s.sleepUntil, triggers: s.triggers, role: roleOf(conv),
+        const locked = bridge.config.access.mode === 'allowlist' && conv.startsWith('private:') && owners.has(conv.slice(8));
+        return { conv, name: bridge.convName(conv), enabled: enabled.has(conv), locked, mode: s.mode, sleepUntil: s.sleepUntil, triggers: s.triggers, role: roleOf(conv),
           wakes: s.wakes, lastReason: s.lastReason, lastWakeAt: s.lastWakeAt, pending: s.pending, busy: d?.isBusy(conv) ?? false, confirmedBy: s.confirmedBy,
           wakesHour: s.wakeTimes.filter((t) => Date.now() - t < 3_600_000).length, limitedUntil: s.limited ? limitResumeAt(s, engineCfg()).at : null };
       });
@@ -471,7 +529,7 @@ export default definePlugin({
     ctx.route('PUT', 'roles/:name', ({ params, body }) => ({ name: roles.save(params.name, String(body?.content ?? '')) }));
     ctx.route('DELETE', 'roles/:name', ({ params }) => { roles.remove(params.name); return { ok: true }; });
     ctx.route('GET', 'preview/:conv', async ({ params }) => ({ prompt: await buildPrompt(convKey(parseConv(params.conv)), 'manual', true) }));
-    ctx.provide({ addNote, setMode, holdLeft, stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
+    ctx.provide({ addNote, setMode, setEnabled, holdLeft, stateOf, roles, schedule: (conv: string, reason = 'manual') => schedule(stateOf(conv), reason, engineCfg()), enabled: () => enabled.list() });
     if (enabled.size) ctx.logger.info(`仿真已在 ${enabled.size} 个会话启用（驱动：${c.driver}）`);
   },
 });

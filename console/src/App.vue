@@ -52,7 +52,7 @@ const menu = computed<MenuOption[]>(() => [
     { label: '用量', key: '/usage', icon: icon(StatsChartOutline) },
   ] },
   { type: 'group', label: '功能', key: 'g-f', children: [
-    { label: '仿真与人格', key: '/features/social', icon: icon(PeopleOutline) },
+    { label: '回复与人格设置', key: '/features/social', icon: icon(PeopleOutline) },
     { label: '记忆', key: '/features/memory', icon: icon(BookOutline) },
     { label: '表情包', key: '/features/stickers', icon: icon(HappyOutline) },
     { label: '更多功能', key: '/features', icon: icon(AppsOutline) },
@@ -82,7 +82,7 @@ async function logout() { await api('/api/logout', { method: 'POST' }); location
           <div v-if="!state.checked" class="center"><n-spin /></div>
           <Login v-else-if="!state.authed" />
           <n-layout v-else has-sider style="height: 100vh">
-            <n-layout-sider bordered collapse-mode="width" :collapsed-width="siderMini" :width="176" :collapsed="collapsed" :native-scrollbar="false" :show-trigger="!isNarrow" @collapse="collapsed = true" @expand="collapsed = false">
+            <n-layout-sider bordered collapse-mode="width" :collapsed-width="siderMini" :width="192" :collapsed="collapsed" :native-scrollbar="false" :show-trigger="!isNarrow" @collapse="collapsed = true" @expand="collapsed = false">
               <div class="brand" @click="router.push('/dashboard')">🐧<span v-if="!collapsed"> QQ-Agent Bridge</span></div>
               <n-menu :value="active" :options="menu" :collapsed="collapsed" :collapsed-width="siderMini" @update:value="(k: string) => router.push(k)" />
             </n-layout-sider>

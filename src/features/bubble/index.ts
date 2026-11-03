@@ -17,8 +17,8 @@ export function inHours(spec: string, h: number) {
 
 /**
  * 冒泡：在完全随机的时机出来说几句，过一会儿自动潜水。
- * 启用了仿真的会话由 AI 自己决定说什么（冒泡期间保持活跃，有人接话就聊）；
- * 没启用仿真的会话从预设语句里随机挑一句。
+ * 启用了的会话由 AI 自己决定说什么（冒泡期间保持活跃，有人接话就聊）；
+ * 没启用的会话从预设语句里随机挑一句。
  */
 export default definePlugin({
   name: 'bubble',
@@ -28,8 +28,8 @@ export default definePlugin({
   defaultEnabled: false,
   softDepends: ['social'],
   config: {
-    convs: { type: 'list', default: [], description: '冒泡的会话（group:群号）；留空 = 所有启用了仿真的群', group: '基本' },
-    style: { type: 'select', options: ['auto', 'ai', 'template'], default: 'auto', description: 'auto：启用仿真的会话由 AI 说，否则用预设语句 / ai：只用 AI / template：只用预设语句', group: '基本' },
+    convs: { type: 'list', default: [], description: '冒泡的会话（group:群号）；留空 = 所有启用了的群', group: '基本' },
+    style: { type: 'select', options: ['auto', 'ai', 'template'], default: 'auto', description: 'auto：启用了的会话由 AI 说，否则用预设语句 / ai：只用 AI / template：只用预设语句', group: '基本' },
     minIntervalMinutes: { type: 'int', default: 120, min: 5, description: '两次冒泡最短间隔（分钟）', group: '时机' },
     maxIntervalMinutes: { type: 'int', default: 600, min: 5, description: '两次冒泡最长间隔（分钟），实际在两者间完全随机', group: '时机' },
     minStayMinutes: { type: 'int', default: 5, min: 1, description: '冒泡后最少活跃多久（分钟）', group: '时机' },
@@ -75,7 +75,7 @@ export default definePlugin({
       save(conv);
       const mins = Math.round(stay / 60_000);
       if (useAi(conv)) {
-        if (!socialOn(conv)) throw new Error('该会话没有启用仿真，AI 冒泡不了（可改用 template 模式）');
+        if (!socialOn(conv)) throw new Error('这个会话没有启用，AI 冒泡不了（在「回复与人格设置」里打开，或改用 template 模式）');
         const sv = social()!;
         sv.setMode(conv, 'active', { holdUntil: s.until });
         sv.addNote(conv, `你潜水有一阵了，现在随手打开群出来冒个泡：看看最近在聊什么，接个话或者随便说一两句（自然点，别说"我来冒泡了"这种话，也别解释自己为什么出现）。接下来约 ${mins} 分钟你保持活跃，有人理你就聊；到点系统会自动让你潜水。`, 'bubble');

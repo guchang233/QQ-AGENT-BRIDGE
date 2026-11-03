@@ -55,13 +55,13 @@
 | `agentPerHour` | int | `20` | Agent 每个范围每小时最多写入几条记忆 |
 | `memberMaxChars` | int | `200` | 非管理员要求记住的内容最长字数 |
 
-## 仿真与人格（`social`） · 内置功能
+## 回复与人格设置（`social`） · 内置功能
 
-由 Agent 驱动（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言、按会话绑定人格卡
+在哪些会话回复（全部启用 / 只启用勾选的）、每个会话用什么人格；由 Agent（DeepSeek Harness 等）自主聊天：唤醒/潜水/沉睡、等人说完、主动发言
 
 **命令**
 
-- `/仿真 [开|关|唤醒|重置|状态]` — 仿真开关与状态
+- `/仿真 [开|关|唤醒|重置|状态]` — 本会话的启用开关与状态
 - `/人格 [列表|<人格名>|默认]`（别名：/角色） — 查看/切换本会话人格
 
 **Agent 工具**：`qq_set_wake`、`qq_social_state`、`qq_get_persona`
@@ -71,7 +71,6 @@
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `driver` | select（dsh） | `"dsh"` | Agent 驱动 |
-| `convs` | list | `[]` | 启用仿真的会话（group:群号 / private:QQ），留空 = 不启用 |
 | `defaultRole` | string | `""` | 默认人格卡名（roles/ 目录下的文件名，不含 .md；留空 = 默认群友） |
 | `roleBindings` | list | `[]` | 按会话绑定人格：会话=>人格名，如 group:123=>小鲸鱼 |
 | `roleMaxChars` | int | `8000` | 人格卡注入上限（字） |
@@ -137,8 +136,8 @@ AI 拿不准时私聊请示管理员；管理员在 QQ 里回复「同意/拒绝
 
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `convs` | list | `[]` | 冒泡的会话（group:群号）；留空 = 所有启用了仿真的群 |
-| `style` | select（auto/ai/template） | `"auto"` | auto：启用仿真的会话由 AI 说，否则用预设语句 / ai：只用 AI / template：只用预设语句 |
+| `convs` | list | `[]` | 冒泡的会话（group:群号）；留空 = 所有启用了的群 |
+| `style` | select（auto/ai/template） | `"auto"` | auto：启用了的会话由 AI 说，否则用预设语句 / ai：只用 AI / template：只用预设语句 |
 | `minIntervalMinutes` | int | `120` | 两次冒泡最短间隔（分钟） |
 | `maxIntervalMinutes` | int | `600` | 两次冒泡最长间隔（分钟），实际在两者间完全随机 |
 | `minStayMinutes` | int | `5` | 冒泡后最少活跃多久（分钟） |

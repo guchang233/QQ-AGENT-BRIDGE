@@ -14,7 +14,7 @@ const tok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n))
 </script>
 
 <template>
-  <div v-if="!items.length" class="empty">暂无动态。开启仿真并收到消息后，这里会实时显示每一步。</div>
+  <div v-if="!items.length" class="empty">暂无动态。接入 AI 并收到消息后，这里会实时显示每一步。</div>
   <div v-for="a in items" :key="a.id" class="row" :class="[a.level, { compact }]">
     <span class="t" :title="fmtFull(a.ts)">{{ fmtTime(a.ts) }}</span>
     <n-tag size="tiny" :type="(KIND[a.kind] ?? ['', 'default'])[1]" :bordered="false" class="k">{{ (KIND[a.kind] ?? [a.kind])[0] }}</n-tag>

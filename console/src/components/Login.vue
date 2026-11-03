@@ -109,11 +109,11 @@ onMounted(() => { if (state.setupRequired) runDiscover(); });
           <n-form-item label="管理员 QQ（拥有插件管理命令权限，可多个，回车添加）">
             <n-dynamic-tags v-model:value="form.owners" />
           </n-form-item>
-          <n-form-item label="会话范围">
+          <n-form-item label="在哪些会话回复">
             <n-radio-group v-model:value="form.accessMode">
               <n-space vertical>
-                <n-radio value="all">全部群聊和私聊（可在设置中加黑名单）</n-radio>
-                <n-radio value="allowlist">仅白名单中的会话（更安全，需要到设置里添加群号/QQ）</n-radio>
+                <n-radio value="all">全部启用（之后可以在「回复与人格设置」里关掉个别会话）</n-radio>
+                <n-radio value="allowlist">只启用勾选的（之后在「回复与人格设置」里勾选；管理员私聊始终启用）</n-radio>
               </n-space>
             </n-radio-group>
           </n-form-item>

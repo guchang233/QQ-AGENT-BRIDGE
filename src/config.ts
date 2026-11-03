@@ -53,7 +53,11 @@ export const ConfigSchema = z.object({
   /** 对管理员的称呼（提示词里使用，例如 管理员 / 管理员 / 老板） */
   ownerTitle: z.string().default('管理员'),
   access: z.object({
-    /** allowlist：只处理白名单会话；all：处理全部（黑名单除外） */
+    /**
+     * 会话启用模式（在控制台「回复与人格设置」里改，那里每个会话一个开关）：
+     * all = 全部启用，关掉的会话记在 deny*；allowlist = 只启用勾选的，勾上的记在 groups/private。
+     * 没启用的会话：AI 不回复，MCP 客户端和插件也看不到、发不了（管理员私聊始终启用）。
+     */
     mode: z.enum(['allowlist', 'all']).default('all'),
     groups: idList,
     private: idList,

@@ -529,5 +529,7 @@ function unmaskConfig(incoming: any, cur: Config) {
   x.server.sessionSecret = cur.server.sessionSecret;
   x.agents ??= {}; x.agents.tokens = cur.agents.tokens; // token 走单独接口
   x.features = cur.features; // 内置功能的设置走 /api/plugins/:name/config
+  // 会话启用模式和名单只在「回复与人格设置」里改；这里只接受只读开关，免得旧页面整体保存时覆盖掉
+  x.access = { ...cur.access, readOnly: typeof x.access?.readOnly === 'boolean' ? x.access.readOnly : cur.access.readOnly };
   return x;
 }

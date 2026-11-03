@@ -74,18 +74,10 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
           </div>
         </n-tab-pane>
 
-        <n-tab-pane name="access" tab="会话范围">
+        <n-tab-pane name="access" tab="回复范围">
           <div class="section">
-            <p class="hint">范围外的会话，Agent 看不到也发不了，插件也不响应；人在控制台操作不受限。</p>
-            <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="120">
-              <n-form-item label="模式"><n-radio-group v-model:value="cfg.access.mode"><n-radio value="all">全部（黑名单除外）</n-radio><n-radio value="allowlist">仅白名单</n-radio></n-radio-group></n-form-item>
-            </n-form>
-            <n-form class="form-2" :label-placement="isNarrow ? 'top' : 'left'" label-width="120">
-              <n-form-item label="白名单群"><n-dynamic-tags v-model:value="cfg.access.groups" /></n-form-item>
-              <n-form-item label="白名单私聊"><n-dynamic-tags v-model:value="cfg.access.private" /></n-form-item>
-              <n-form-item label="黑名单群"><n-dynamic-tags v-model:value="cfg.access.denyGroups" /></n-form-item>
-              <n-form-item label="黑名单私聊"><n-dynamic-tags v-model:value="cfg.access.denyPrivate" /></n-form-item>
-            </n-form>
+            <p class="hint">在哪些会话回复（全部启用 / 只启用勾选的，以及每个会话的开关）已经移到
+              <router-link to="/features/social" style="color: #12b7f5">回复与人格设置</router-link>。</p>
           </div>
         </n-tab-pane>
 

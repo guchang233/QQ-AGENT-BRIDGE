@@ -373,7 +373,7 @@ describe('系统插件', () => {
     });
     const before = bridge.drivers.get('dsh');
     bridge.registerDriver(driver);
-    host.saveConfig('social', { ...host.plugins.get('social')!.config, convs: ['group:111'], digestEnabled: true, digestEveryMessages: 10, batchWindowSec: 0 });
+    host.saveConfig('social', { ...host.plugins.get('social')!.config, digestEnabled: true, digestEveryMessages: 10, batchWindowSec: 0 });
     await host.reload('social');
     const svc: any = host.services.get('social');
     const id = String(mock.pushGroupMessage(111, 30003, [{ type: 'text', data: { text: '我下个月要搬去成都了' } }]));
@@ -403,9 +403,69 @@ describe('系统插件', () => {
     const after = await callToolStateless(bridge, caller, 'qq_send', { conv: 'group:111', message: '恢复发言', convToken });
     expect(after.isError).toBeFalsy();
 
-    host.saveConfig('social', { ...host.plugins.get('social')!.config, convs: [], digestEnabled: false, batchWindowSec: 8 });
+    host.saveConfig('social', { ...host.plugins.get('social')!.config, digestEnabled: false, batchWindowSec: 8 });
     if (before) bridge.drivers.set('dsh', before); else bridge.drivers.delete('dsh');
     await host.reload('social');
+  });
+
+  it('会话开关：一套开关管 AI 回复和工具；没启用的会话被 @ 时提示原因；旧的仿真列表自动合并', async () => {
+    const host = bridge.pluginHost!;
+    const driver: any = Object.assign(new EventEmitter(), {
+      id: 'dsh', kind: 'test', label: '测试驱动', wakes: [] as any[],
+      async start() {}, async stop() {}, isBusy: () => false, status: () => ({ id: 'dsh', kind: 'test', label: '测试驱动', state: 'ready', detail: '', busy: [], sessions: 0 }),
+      async wake(w: any) { this.wakes.push(w); },
+    });
+    const before = bridge.drivers.get('dsh');
+    const saved = structuredClone(bridge.config.access);
+    const savedOwners = [...bridge.config.owners];
+    bridge.registerDriver(driver);
+    const acts: any[] = [];
+    const onAct = (x: any) => acts.push(x);
+    bridge.on('activity', onAct);
+    try {
+      host.saveConfig('social', { ...host.plugins.get('social')!.config, batchWindowSec: 0, directWindowSec: 0 });
+      await host.reload('social');
+      const svc: any = host.services.get('social');
+      const at = (g: number) => mock.pushGroupMessage(g, 30003, [{ type: 'at', data: { qq: '10000' } }, { type: 'text', data: { text: ' 在吗' } }]);
+      // 全部启用：直接回复，不用再单独打开
+      at(111);
+      mock.pushPrivateMessage(30004, [{ type: 'text', data: { text: '你好' } }]);
+      await waitFor(() => driver.wakes.some((w: any) => w.conv === 'group:111') && driver.wakes.some((w: any) => w.conv === 'private:30004'), 8000);
+      // 关掉 = 拉黑：AI 不回复、工具也碰不到，被 @ 时提示原因
+      svc.setEnabled('group:111', false);
+      expect(bridge.config.access.denyGroups).toContain('111');
+      expect(bridge.policy.convAllowed({ type: 'group', id: '111' })).toBe(false);
+      driver.wakes.length = 0;
+      at(111);
+      await waitFor(() => acts.some((x) => x.conv === 'group:111' && /没启用/.test(x.title)), 4000);
+      expect(driver.wakes.some((w: any) => w.conv === 'group:111')).toBe(false);
+      svc.setEnabled('group:111', true);
+      expect(bridge.config.access.denyGroups).not.toContain('111');
+      // 只启用勾选的：勾上就是白名单；管理员私聊始终启用
+      bridge.config.owners = ['20001'];
+      bridge.setConvEnabled('group:111', true);
+      bridge.config.access.mode = 'allowlist';
+      bridge.config.access.groups = [];
+      expect(bridge.policy.convAllowed({ type: 'group', id: '111' })).toBe(false);
+      svc.setEnabled('group:111', true);
+      expect(bridge.config.access.groups).toEqual(['111']);
+      expect(bridge.policy.convAllowed({ type: 'private', id: '20001' })).toBe(true);
+      // 旧版本的仿真列表：全部模式 + 列表非空 → 只启用列表里的会话
+      bridge.config.access = { ...saved, mode: 'all', denyGroups: [] };
+      host.saveConfig('social', { ...host.plugins.get('social')!.config, convs: ['group:111', 'private:30004'] });
+      await host.reload('social');
+      expect(bridge.config.access).toMatchObject({ mode: 'allowlist', groups: ['111'], private: ['30004'] });
+      expect(host.plugins.get('social')!.config.convs).toBeUndefined();
+      expect(bridge.config.features.social?.convs).toBeUndefined();
+      expect(acts.some((x) => /合并/.test(x.title))).toBe(true);
+    } finally {
+      bridge.off('activity', onAct);
+      bridge.config.access = saved;
+      bridge.config.owners = savedOwners;
+      host.saveConfig('social', { ...host.plugins.get('social')!.config, batchWindowSec: 8, directWindowSec: 2 });
+      if (before) bridge.drivers.set('dsh', before); else bridge.drivers.delete('dsh');
+      await host.reload('social');
+    }
   });
 
   it('语义检索：向量由后台补齐，换模型后重算，同义词能搜到', async () => {

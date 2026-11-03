@@ -111,8 +111,9 @@ export async function migrateQqBridge(bridge: Bridge, dir: string, opt: MigrateO
     const p = s2.proactive ?? {};
     const ctx = s2.context ?? {};
     const cur = host.plugins.get('social')!.config;
+    // qq-bridge 里开了仿真的会话，在这里也启用
+    for (const conv of info.sessions) { try { bridge.setConvEnabled(conv, true); } catch { /* 会话 ID 无效 */ } }
     const patch: Record<string, unknown> = {
-      convs: [...new Set([...(cur.convs ?? []), ...info.sessions])],
       ...(info.currentRole ? { defaultRole: info.currentRole } : {}),
       ...(qb.role?.maxInjectChars ? { roleMaxChars: Math.min(20000, Math.max(1000, Number(qb.role.maxInjectChars))) } : {}),
       ...(w.defaultMode ? { defaultMode: w.defaultMode === 'active' ? 'active' : 'diving' } : {}),
