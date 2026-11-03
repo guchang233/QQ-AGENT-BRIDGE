@@ -7,8 +7,7 @@ defineProps<{ items: any[]; compact?: boolean }>();
 const msg = useMessage();
 /** 复制一条动态（排查问题时发给别人看） */
 async function copy(a: any) {
-  const text = [`${fmtFull(a.ts)} [${(KIND[a.kind] ?? [a.kind])[0]}] ${a.convName || a.conv || ''} ${a.title}${a.actor ? ` · ${a.actor}` : ''}`, a.detail || ''].filter(Boolean).join('
-');
+  const text = [`${fmtFull(a.ts)} [${(KIND[a.kind] ?? [a.kind])[0]}] ${a.convName || a.conv || ''} ${a.title}${a.actor ? ` · ${a.actor}` : ''}`, a.detail || ''].filter(Boolean).join(String.fromCharCode(10));
   try { await navigator.clipboard.writeText(text); msg.success('已复制'); } catch { msg.error('复制失败，浏览器不允许访问剪贴板'); }
 }
 
