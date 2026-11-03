@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { NCard, NSpace, NButton, NTag, NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NText, NPopconfirm, useMessage } from 'naive-ui';
 import { api, onPush, isNarrow } from '../api';
 import PageHint from './PageHint.vue';
+import { useDshModels } from '../dshModels';
 
 const msg = useMessage();
 const info = ref<any>(null);
@@ -18,30 +19,7 @@ async function load() {
 }
 
 // 模型目录：从 DSH 读取实际可用的服务商和模型，只能从中选择
-const catalog = ref<any>(null);
-const loadingModels = ref(false);
-async function loadModels() {
-  loadingModels.value = true;
-  try { catalog.value = await api('/api/drivers/dsh/models'); } catch (e: any) { catalog.value = { ok: false, error: e.message }; } finally { loadingModels.value = false; }
-}
-const providers = computed<any[]>(() => (catalog.value?.ok ? catalog.value.providers : []));
-const providerOptions = computed(() => providers.value.map((p) => ({ label: p.name === p.id ? p.id : `${p.name}（${p.id}）`, value: p.id })));
-const curProvider = computed(() => providers.value.find((p) => p.id === form.value.provider));
-const modelOptions = computed(() => (curProvider.value?.models ?? []).map((m: any) => ({ label: m.name === m.id ? m.id : `${m.name}（${m.id}）`, value: m.id })));
-const curModel = computed(() => curProvider.value?.models.find((m: any) => m.id === form.value.model));
-const effortOptions = computed(() => (curModel.value?.efforts?.length ? curModel.value.efforts : ['off', 'low', 'high', 'max']).map((v: string) => ({ label: v, value: v })));
-/** 当前配置在 DSH 里不存在（保存前提示） */
-const invalidModel = computed(() => catalog.value?.ok && form.value.model && !curModel.value);
-function pickProvider(id: string) {
-  form.value.provider = id;
-  const p = providers.value.find((x) => x.id === id);
-  if (p && !p.models.some((m: any) => m.id === form.value.model)) pickModel(p.models[0]?.id ?? '');
-}
-function pickModel(id: string) {
-  form.value.model = id;
-  const m = curProvider.value?.models.find((x: any) => x.id === id);
-  if (m?.efforts?.length && !m.efforts.includes(form.value.reasoningEffort)) form.value.reasoningEffort = m.defaultEffort ?? m.efforts[0];
-}
+const { catalog, loading: loadingModels, load: loadModels, providerOptions, modelOptions, effortOptions, invalid: invalidModel, pickProvider, pickModel } = useDshModels(form);
 const status = computed(() => info.value?.drivers?.find((d: any) => d.id === 'dsh'));
 const setup = computed(() => info.value?.dsh?.setup);
 const stateTag = computed(() => ({ ready: ['success', '已连接'], connecting: ['warning', '连接中'], error: ['error', '异常'], disabled: ['default', '未启用'] } as any)[status.value?.state ?? 'disabled']);

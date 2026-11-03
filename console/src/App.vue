@@ -12,6 +12,7 @@ import {
 } from '@vicons/ionicons5';
 import { state, checkSession, api, isNarrow } from './api';
 import Login from './components/Login.vue';
+import Wizard from './components/Wizard.vue';
 import ApprovalWatcher from './components/ApprovalWatcher.vue';
 import StatusPill from './components/StatusPill.vue';
 
@@ -82,6 +83,7 @@ async function logout() { await api('/api/logout', { method: 'POST' }); location
         <n-dialog-provider>
           <div v-if="!state.checked" class="center"><n-spin /></div>
           <Login v-else-if="!state.authed" />
+          <Wizard v-else-if="state.status?.wizard === 'pending'" />
           <n-layout v-else has-sider style="height: 100vh">
             <n-layout-sider bordered collapse-mode="width" :collapsed-width="siderMini" :width="192" :collapsed="collapsed" :native-scrollbar="false" :show-trigger="!isNarrow" @collapse="collapsed = true" @expand="collapsed = false">
               <div class="brand" @click="router.push('/dashboard')">🐧<span v-if="!collapsed"> QQ-Agent Bridge</span></div>

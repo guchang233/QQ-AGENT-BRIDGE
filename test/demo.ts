@@ -7,7 +7,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { MockOneBot, PNG_1PX } from './mock-onebot.ts';
 
-const dir = path.join(os.tmpdir(), 'qab-demo');
+const dir = path.join(os.tmpdir(), process.argv.includes('--fresh') ? 'qab-demo-fresh' : 'qab-demo');
+if (process.argv.includes('--fresh')) fs.rmSync(dir, { recursive: true, force: true }); // 每次都是全新安装
 fs.mkdirSync(dir, { recursive: true });
 process.env.QAB_CONFIG = path.join(dir, 'qab.yaml');
 
@@ -20,16 +21,27 @@ const mock = new MockOneBot({ wsPort: 13101, httpPort: 13100, token: 'mock' });
 (mock as any).msgSeq = Math.floor(Date.now() / 1000); // 演示数据目录会保留，消息 ID 不能每次从 1 开始，否则新消息被当成重复丢掉
 await mock.start();
 
+// --fresh：模拟全新安装（没有密码，走设置向导）；放一个假的 SnowLuma 目录，账号指向 mock
+const fresh = process.argv.includes('--fresh');
+const slHome = path.join(dir, 'snowluma');
+if (fresh) {
+  fs.mkdirSync(path.join(slHome, 'config'), { recursive: true });
+  fs.writeFileSync(path.join(slHome, 'config', 'onebot_10000.json'), JSON.stringify({ networks: {
+    httpServers: [{ name: 'http-default', accessToken: 'mock', host: '127.0.0.1', port: 13100 }],
+    wsServers: [{ name: 'ws-default', accessToken: 'mock', host: '127.0.0.1', port: 13101 }],
+  } }));
+  fs.writeFileSync(path.join(slHome, 'config', 'onebot_20000.json'), JSON.stringify({ networks: { httpServers: [], wsServers: [] } }));
+}
 const config = ConfigSchema.parse({
-  onebot: { wsUrl: 'ws://127.0.0.1:13101', httpUrl: 'http://127.0.0.1:13100', accessToken: 'mock', autoDiscover: false },
-  server: { port: Number(process.env.PORT ?? 3299), consolePassword: 'demo1234', sessionSecret: 'demo' },
+  onebot: fresh ? { snowlumaHome: slHome, wsUrl: 'ws://127.0.0.1:1', httpUrl: 'http://127.0.0.1:1', autoDiscover: false } : { wsUrl: 'ws://127.0.0.1:13101', httpUrl: 'http://127.0.0.1:13100', accessToken: 'mock', autoDiscover: false },
+  server: { port: Number(process.env.PORT ?? 3299), consolePassword: fresh ? '' : 'demo1234', sessionSecret: 'demo' },
   dataDir: path.join(dir, 'data'),
   agents: { tokens: [{ name: 'demo-agent', token: 'qab_demo', tiers: ['read', 'send', 'manage', 'danger'] }] },
 });
 const bridge = new Bridge(config);
 const plugins = new PluginHost(bridge);
 await startWeb(bridge, plugins);
-await bridge.connect();
+if (!fresh) await bridge.connect();
 await plugins.loadAll();
 
 // 样例记忆：让「记忆 → 关联网络」打开就有内容

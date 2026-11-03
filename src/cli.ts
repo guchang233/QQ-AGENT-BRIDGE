@@ -36,7 +36,16 @@ async function main() {
         const { AstrBotHost } = await import('./plugins/astrbot.ts');
         await new AstrBotHost(bridge, plugins).start().catch((e: any) => console.error('AstrBot 兼容层启动失败：', e.message));
       }
-      if (!bridge.config.server.consolePassword) console.log(`\n首次使用：打开 http://127.0.0.1:${bridge.config.server.port} 完成设置向导\n`);
+      if (!bridge.config.server.consolePassword) {
+        const url = `http://127.0.0.1:${bridge.config.server.port}`;
+        console.log(`\n首次使用：打开 ${url} 完成设置向导\n`);
+        // 帮用户打开浏览器（QAB_NO_BROWSER=1 可以关掉）
+        if (!process.env.QAB_NO_BROWSER) {
+          const { spawn } = await import('node:child_process');
+          const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+          try { spawn(cmd as string, args as string[], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref(); } catch { /* 没有图形界面 */ }
+        }
+      }
       const shutdown = async () => { updater.stop(); await bridge.stop(); process.exit(0); };
       updater.on('restart', () => { console.log('更新已下载，正在重启…'); void shutdown(); });
       updater.start();

@@ -132,17 +132,22 @@ export class ReplyTracer extends EventEmitter {
 
   /** 等着唤醒的全部卡住（比如没有 AI 驱动） */
   failWaiting(why: string, fix?: Step['fix']) {
-    for (const t of [...this.waiting.values()]) this.step(t, 'deliver', 'blocked', why, fix);
+    for (const t of [...this.waiting.values()]) this.blockDeliver(t, why, fix);
   }
 
   deliverFailed(conv: string, why: string, fix?: Step['fix']) {
     const t = this.running.get(conv);
-    if (!t) return;
-    // 一分钟内同一个会话、同样的原因又失败了：并进上一条，免得满屏都是同一个错误
+    if (t) this.blockDeliver(t, why, fix);
+  }
+
+  /** 停在「交给 AI」。一分钟内同一个会话、同样的原因又失败了：并进上一条，免得满屏都是同一个错误 */
+  private blockDeliver(t: Trace, why: string, fix?: Step['fix']) {
+    const conv = t.conv;
     const prev = this.list.find((x) => x !== t && x.conv === conv);
     const ps = prev?.steps.find((x) => x.key === 'deliver');
     if (prev?.endedAt && ps?.state === 'blocked' && ps.note === why && Date.now() - prev.endedAt < 60_000) {
-      this.running.delete(conv);
+      if (this.running.get(conv) === t) this.running.delete(conv);
+      if (this.waiting.get(conv) === t) this.waiting.delete(conv);
       this.list.splice(this.list.indexOf(t), 1);
       this.emit('trace', { ...t, removed: true });
       prev.merged += t.merged;

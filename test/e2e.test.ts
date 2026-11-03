@@ -779,6 +779,44 @@ describe('无状态 Agent 接口（stdio 代理使用）', () => {
 });
 
 describe('控制台 API', () => {
+  it('设置向导：找到 SnowLuma 账号并检查端口，选账号就连上，回复范围一次保存', async () => {
+    const base = `http://127.0.0.1:${PORT}`;
+    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'secret123' }) });
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const post = async (u: string, body?: unknown) => (await fetch(`${base}${u}`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) })).json();
+    const savedCfg = structuredClone(bridge.config);
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qab-sl-'));
+    fs.mkdirSync(path.join(home, 'config'));
+    fs.writeFileSync(path.join(home, 'config', 'onebot_10000.json'), JSON.stringify({ networks: { httpServers: [{ accessToken: 'mock', host: '127.0.0.1', port: HTTP }], wsServers: [{ accessToken: 'mock', host: '127.0.0.1', port: WS }] } }));
+    fs.writeFileSync(path.join(home, 'config', 'onebot_20000.json'), JSON.stringify({ networks: { httpServers: [], wsServers: [{ accessToken: 'wrong', host: '127.0.0.1', port: WS }] } }));
+    try {
+      const sl = await post('/api/wizard/snowluma', { home });
+      expect(sl.valid).toBe(true);
+      const a = sl.accounts.find((x: any) => x.uin === '10000');
+      expect(a).toMatchObject({ http: { ok: true }, ws: { ok: true }, nickname: '测试机器人' });
+      const b = sl.accounts.find((x: any) => x.uin === '20000');
+      expect(b.http).toBeNull();
+      expect(b.ws).toMatchObject({ ok: false, error: 'token 不对' });
+      expect(JSON.stringify(sl)).not.toContain('mock'); // token 不发给浏览器
+      const bad = await fetch(`${base}/api/wizard/snowluma/use`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ home, uin: '20000' }) });
+      expect(bad.status).toBe(400);
+      const ok = await post('/api/wizard/snowluma/use', { home, uin: '10000' });
+      expect(ok).toMatchObject({ ok: true, self: { userId: '10000' } });
+      expect(bridge.config.bot).toMatchObject({ autoConnect: true, autoReconnect: true });
+      const basics = await post('/api/wizard/basics', { owners: ['20001', 'abc'], mode: 'allowlist', enabled: ['group:111', 'private:30004'] });
+      expect(basics.owners).toEqual(['20001']);
+      expect(bridge.config.access).toMatchObject({ mode: 'allowlist', groups: ['111'], private: ['30004'] });
+      await post('/api/wizard/restart');
+      expect((await (await fetch(`${base}/api/status`, { headers: { cookie } })).json()).wizard).toBe('pending');
+      await post('/api/wizard/done');
+      expect(bridge.config.ui.wizard).toBe('done');
+    } finally {
+      bridge.updateConfig({ ...savedCfg, ui: { wizard: 'done' } });
+      fs.rmSync(home, { recursive: true, force: true });
+      await waitFor(() => bridge.status().connection === 'open', 8000);
+    }
+  });
+
   it('未登录 401，登录后可访问', async () => {
     const base = `http://127.0.0.1:${PORT}`;
     expect((await fetch(`${base}/api/status`)).status).toBe(401);

@@ -100,6 +100,10 @@ export const ConfigSchema = z.object({
     /** agent 发送本地文件时允许读取的目录（空 = 不限制） */
     uploadRoots: z.array(z.string()).default([]),
   }).prefault({}),
+  ui: z.object({
+    /** 首次设置向导：pending = 设好密码后还没走完（登录后继续显示向导）；老版本升级上来的没有这一项，不显示 */
+    wizard: z.enum(['pending', 'done']).optional(),
+  }).prefault({}),
   /**
    * 内置功能（仿真、记忆、表情包等）的设置，每个功能一节；enabled: false 表示关闭该功能。
    * 只通过功能页面修改（PUT /api/features/:name/config），/api/config 不读写这一节。

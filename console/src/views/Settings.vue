@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { NCard, NForm, NFormItem, NInput, NInputNumber, NSwitch, NButton, NSpace, NDynamicTags, NRadioGroup, NRadio, NText, NAlert, NSpin, NProgress, NTag, NTabs, NTabPane, useMessage, useThemeVars } from 'naive-ui';
-import { api, onPush, isNarrow } from '../api';
+import { api, onPush, isNarrow, state } from '../api';
 
 const msg = useMessage();
+async function rerunWizard() {
+  await api('/api/wizard/restart', { method: 'POST' });
+  state.status = { ...(state.status ?? {}), wizard: 'pending' };
+}
 const theme = useThemeVars();
 const cfg = ref<any>(null);
 const accounts = ref<string[]>([]);
@@ -43,6 +47,10 @@ const fmtSize = (n: number) => (n ? `${(n / 1048576).toFixed(1)} MB` : '');
     <div v-if="cfg" class="settings">
       <n-tabs v-model:value="tab" type="line" size="small" :placement="isNarrow ? 'top' : 'left'" :pane-style="isNarrow ? '' : 'padding-left: 16px'">
         <n-tab-pane name="basic" tab="基本">
+          <div class="section"><h3>设置向导</h3>
+            <p class="hint">重新走一遍首次设置：连接 QQ、接入 AI、选择在哪里回复。已有的设置会作为默认值，不会被清空。</p>
+            <n-button size="small" @click="rerunWizard">重新运行设置向导</n-button>
+          </div>
           <div class="section"><h3>机器人启动</h3>
             <n-form :label-placement="isNarrow ? 'top' : 'left'" label-width="120">
               <n-form-item label="启动时自动连接"><n-switch v-model:value="cfg.bot.autoConnect" /><span class="switch-hint">关闭时只有在仪表盘点启动才连接 QQ</span></n-form-item>

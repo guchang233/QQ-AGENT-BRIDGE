@@ -1,6 +1,25 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "qab-demo", "runtimeExecutable": "npm", "runtimeArgs": ["run", "demo"], "port": 3299 }
+    {
+      "name": "qab-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "demo"
+      ],
+      "port": 3299
+    },
+    {
+      "name": "qab-demo-fresh",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "demo",
+        "--",
+        "--fresh"
+      ],
+      "port": 3299
+    }
   ]
 }

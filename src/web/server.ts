@@ -9,6 +9,7 @@ import type { WebSocket } from 'ws';
 import type { Bridge } from '../bridge.ts';
 import type { PluginHost } from '../plugins/host.ts';
 import { CONSOLE_CALLER } from '../policy.ts';
+import { registerWizard } from './wizard.ts';
 import { ConfigSchema, ROOT, TIERS, resolveFromRoot, guessSnowLumaHome, hasOneBotConfig, type Config } from '../config.ts';
 import { handleMcpHttp, mcpSessions, toolsFor, callToolStateless } from '../mcp/server.ts';
 import { buildTools } from '../mcp/tools.ts';
@@ -107,6 +108,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     if (!b.password || b.password.length < 6) return reply.code(400).send({ error: '密码至少 6 位' });
     const cfg = structuredClone(bridge.config);
     cfg.server.consolePassword = b.password;
+    cfg.ui.wizard = 'pending'; // 设好密码后接着走向导：连接 QQ、接入 AI、回复范围
     if (b.owners) cfg.owners = b.owners.map(String).filter(Boolean);
     if (b.snowlumaHome?.trim()) cfg.onebot.snowlumaHome = b.snowlumaHome.trim();
     if (b.wsUrl?.trim()) cfg.onebot.wsUrl = b.wsUrl.trim();
@@ -123,6 +125,8 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     return { ok: true, connected: bridge.status().connection === 'open' };
   });
 
+  registerWizard(app, bridge);
+
   /** 控制台是直接从磁盘读的，后端却要重启才更新：文件比进程新时提示重启，避免新页面配旧后端。 */
   const filesNewerThanProcess = () => {
     try { return fs.statSync(path.join(ROOT, 'console', 'dist', 'index.html')).mtimeMs > bridge.startedAt; } catch { return false; }
@@ -131,7 +135,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   // ------------------------------------------------------------------ 状态与配置
   app.get('/api/status', async () => {
     const day = Date.now() - 86400_000;
-    return { ...bridge.status(), restartNeeded: filesNewerThanProcess(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp`, root: ROOT.split(path.sep).join('/') };
+    return { ...bridge.status(), wizard: bridge.config.ui.wizard ?? 'done', restartNeeded: filesNewerThanProcess(), stats24h: bridge.store.stats(day), mcpSessions: mcpSessions(), discovery: bridge.discovery && { ok: bridge.discovery.ok, tried: bridge.discovery.tried, self: bridge.discovery.self }, mcpUrl: `http://${hostFor(bridge.config)}:${bridge.config.server.port}/mcp`, root: ROOT.split(path.sep).join('/') };
   });
   app.post('/api/bot/start', async () => { await bridge.connect(); return bridge.status(); });
   app.post('/api/bot/stop', async () => { bridge.disconnect(); return bridge.status(); });
