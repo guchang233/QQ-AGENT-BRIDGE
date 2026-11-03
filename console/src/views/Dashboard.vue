@@ -66,7 +66,8 @@ onUnmounted(offTrace);
         <div class="mini"><b>{{ s.stats24h?.recv ?? 0 }}</b><span>24h 收到</span></div>
         <div class="mini"><b>{{ s.stats24h?.sent ?? 0 }}</b><span>24h 发出</span></div>
         <div class="mini"><b>{{ s.stats24h?.toolCalls ?? 0 }}</b><span>Agent 调用</span></div>
-        <div class="mini" :class="{ bad: s.stats24h?.toolFailed }"><b>{{ s.stats24h?.toolFailed ?? 0 }}</b><span>调用失败</span></div>
+        <div class="mini" :class="{ bad: s.stats24h?.toolFailed, link: s.stats24h?.toolFailed }" :role="s.stats24h?.toolFailed ? 'button' : undefined" :tabindex="s.stats24h?.toolFailed ? 0 : undefined" :title="s.stats24h?.toolFailed ? '查看失败的调用' : ''"
+          @click="s.stats24h?.toolFailed && router.push('/audit?ok=fail')" @keydown.enter="s.stats24h?.toolFailed && router.push('/audit?ok=fail')"><b>{{ s.stats24h?.toolFailed ?? 0 }}</b><span>调用失败</span></div>
         <div class="mini"><b>{{ s.mcpSessions?.length ?? 0 }}</b><span>MCP 会话</span></div>
       </div>
     </section>
@@ -168,4 +169,6 @@ onUnmounted(offTrace);
 .flow-line .dot.busy { background: #12b7f5; }
 .flow-line .dot.replied { background: #18a058; }
 .flow-line .dot.blocked { background: #d03050; }
+.mini.link { cursor: pointer; }
+.mini.link:hover span { text-decoration: underline; }
 </style>

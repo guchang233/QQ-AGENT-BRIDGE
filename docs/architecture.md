@@ -20,8 +20,9 @@
 1. **单一枢纽**：MCP、控制台、插件都只通过 `Bridge` 操作 QQ，鉴权、限流、审计只实现一次。
 2. **调用方即身份**（`Caller`）：`agent`（带 token 与权限）/ `console`（人）/ `plugin`。策略按身份执行。
 3. **失败要显式**：被拦截的操作抛 `PolicyError`，工具返回"未执行"，绝不静默吞掉。
-4. **核心精简，功能插件化**：表情包、语音、记忆、提醒等都是系统插件，使用与第三方插件完全相同的 API。
+4. **内置功能与插件分开**：回复与人格设置、记忆、表情包、语音等是内置功能（`src/features/`），随版本一起改，可以用内部接口；插件只能用公开 SDK（`src/sdk.ts`，带 `API_VERSION`），QAB 内部重构不影响插件。
 5. **零原生依赖**：存储用 Node 内置 `node:sqlite`，TS 由 `tsx` 直接运行，Windows 开箱即用。
+6. **不静默**：每次叫醒 AI 都记在回复流程里（`src/trace.ts`），卡在哪一步、为什么，控制台上直接看得到。
 
 ## 目录
 
@@ -40,15 +41,19 @@
 | `src/mcp/tools.ts` | 核心 MCP 工具定义（声明式 `ToolDef`） |
 | `src/mcp/server.ts` | 按 token 构建 MCP Server、Streamable HTTP 会话管理、插件工具合并 |
 | `src/mcp/stdio.ts` | stdio 入口：代理到守护进程或独立运行 |
-| `src/plugins/api.ts` | **插件公共 API（稳定契约）** |
-| `src/plugins/host.ts` | 插件发现、依赖排序、上下文、分发、热重载、服务注册 |
+| `src/sdk.ts` | **插件公开 SDK（稳定契约，`API_VERSION`）** |
+| `src/plugins/api.ts` | 内部上下文类型（内置功能用，比 SDK 多出内部对象） |
+| `src/plugins/host.ts` | 内置功能与插件的加载、依赖排序、上下文、权限检查、出错隔离、分发、热重载 |
+| `src/plugins/package.ts` | 插件包：检查、安装、卸载、打包 |
 | `src/plugins/astrbot.ts` + `astrbot_shim/` | AstrBot 兼容层（Python 子进程 + JSON-RPC） |
-| `src/system-plugins/*` | 系统插件 |
-| `src/sdk.ts` | 插件 SDK 导出（`import from 'qq-agent-bridge'`） |
+| `src/features/*` | 内置功能（设置在主配置 `features.<名称>`） |
+| `src/system-plugins/*` | 随附的小插件（只用公开 SDK，也是插件示例） |
+| `src/trace.ts` | 回复流程：每次叫醒 AI 经过的步骤 |
 | `src/web/server.ts` | Fastify：控制台 API、插件路由 `/api/p/*`、MCP 挂载、WS 推送、静态文件 |
+| `src/web/wizard.ts` | 首次设置向导的接口（SnowLuma 检查、连接、DSH 状态、回复范围） |
 | `console/` | Vue 3 + Naive UI 控制台 |
 | `test/` | Mock OneBot、端到端测试、单元测试、演示模式 |
-| `scripts/gen-docs.ts` | 生成工具与系统插件参考文档 |
+| `scripts/gen-docs.ts` | 生成工具、内置功能与随附插件的参考文档 |
 
 ## 一条消息的旅程
 

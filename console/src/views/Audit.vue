@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router';
 import { h, onMounted, onUnmounted, ref, computed } from 'vue';
 import { NDataTable, NTag, NSpace, NButton, NInput, NSelect, NCode, NSwitch, type DataTableColumns } from 'naive-ui';
 import { api, onPush, fmtFull, TIER_LABEL, TIER_TYPE } from '../api';
 
 const rows = ref<any[]>([]);
 const q = ref('');
-const okFilter = ref<'all' | 'ok' | 'fail'>('all');
+// 从仪表盘「调用失败」点进来时带 ?ok=fail，直接只看失败的
+const q0 = String(useRoute().query.ok ?? '');
+const okFilter = ref<'all' | 'ok' | 'fail'>(q0 === 'ok' || q0 === 'fail' ? q0 : 'all');
 const live = ref(true);
 
 async function load() { rows.value = await api('/api/audit?limit=500'); }

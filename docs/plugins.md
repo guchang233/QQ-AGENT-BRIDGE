@@ -1,8 +1,13 @@
 # 插件开发指南
 
-QQ-Agent Bridge 的插件就是一个导出 `definePlugin({...})` 的 TypeScript/JavaScript 文件。无需构建、无需注册，放进 `plugins/` 保存即生效。
+QQ-Agent Bridge 的插件就是一个导出 `definePlugin({...})` 的 TypeScript/JavaScript 文件。无需构建、无需注册，放进 `plugins/` 保存即生效；打成插件包后，别人在控制台上传就能安装。
+
+**兼容承诺**：插件只通过公开 SDK（`import ... from 'qq-agent-bridge'`）和 QAB 打交道。SDK 带主版本号（目前 `API_VERSION = 1`），主版本不变，插件就不用改。要删的接口先标 `@deprecated`，至少保留一个大版本。QAB 内部怎么重构都不影响插件。
+
+> 回复与人格设置、记忆、表情包、语音等是 QAB 的**内置功能**，不是插件，不出现在「插件」页。插件是在它们之外加的东西。
 
 - [快速开始](#快速开始)
+- [权限](#权限)
 - [插件结构与元数据](#插件结构与元数据)
 - [配置](#配置)
 - [处理消息](#处理消息)
@@ -14,7 +19,7 @@ QQ-Agent Bridge 的插件就是一个导出 `definePlugin({...})` 的 TypeScript
 - [ctx API 速查](#ctx-api-速查)
 - [最佳实践](#最佳实践)
 - [测试](#测试)
-- [发布与分享](#发布与分享)
+- [打包与分享](#打包与分享)
 
 ## 快速开始
 
@@ -33,6 +38,8 @@ import { definePlugin } from 'qq-agent-bridge';
 
 export default definePlugin({
   name: 'ping',
+  apiVersion: 1,           // 按插件 API v1 编写
+  permissions: ['send'],   // 要发消息
   setup(ctx) {
     ctx.command('ping', (e) => e.reply('pong'));
   },
@@ -51,7 +58,8 @@ plugins/
   weather/                # 目录插件
     index.ts
     README.md
-    package.json          # 可选：插件自己的 npm 依赖
+    plugin.json           # 打成插件包时必须有（name、version、apiVersion、permissions）
+    package.json          # 可选：插件自己的 npm 依赖（打包时连同 node_modules 一起打进去）
 ```
 
 ```ts
@@ -61,13 +69,34 @@ definePlugin({
   version: '1.0.0',
   description: '查询天气',
   author: 'you',
-  depends: ['memory'],        // 必需依赖：先加载；缺失时本插件报错不加载
-  softDepends: ['stickers'],  // 可选依赖：存在则先加载
+  apiVersion: 1,              // 按哪个插件 API 版本写的；不符时拒绝加载并说明原因
+  permissions: ['send'],      // 需要的权限，见下一节
+  depends: ['other-plugin'],  // 必需依赖的其他插件：先加载；缺失时本插件报错不加载
+  softDepends: ['another'],   // 可选依赖：存在则先加载
   defaultEnabled: true,       // 用户未显式开关时是否启用
   config: { ... },
   setup(ctx) { ... },
 });
 ```
+
+## 权限
+
+在 `permissions` 里写明插件要用哪些能力。安装插件包时会把它们列给用户看；调用没声明的能力会直接报错。
+
+| 权限 | 能做什么 |
+|---|---|
+| `send` | 发消息、回复、贴表情（`ctx.qq.send`、`e.reply`、`e.send`、`e.react`） |
+| `onebot` | 直接调用 OneBot 动作（`ctx.qq.call`），如禁言、撤回、查资料 |
+| `history` | 读聊天记录和记忆（`ctx.qq.recent`、`ctx.memory.recall`） |
+| `memory` | 写入记忆（`ctx.memory.remember`，标记为未核实） |
+| `agent-tools` | 给 AI 注册工具（`ctx.tool`） |
+| `http` | 注册控制台接口（`ctx.route`） |
+
+不需要任何权限就写 `permissions: []`。没写 `permissions` 的插件视为需要全部权限（旧插件兼容），控制台详情页会标出来。
+
+> 权限声明防的是写错的插件，不是恶意插件：插件和 QAB 跑在同一个进程里。只装你信任的来源。
+
+插件里连续出错（5 分钟内 10 次）会被自动暂停，并在「动态」里记一条，不影响其他插件。修好后点「重载」或重新打开开关即可。
 
 ## 配置
 
@@ -84,6 +113,8 @@ config: {
   mode:     { type: 'select', options: ['fast', 'accurate'], default: 'fast' },
   intro:    { type: 'text', default: '', description: '多行文本' },
   extra:    { type: 'json', default: {} },
+  timeout:  { type: 'int', default: 30, advanced: true },              // 高级设置：控制台里默认折叠
+  proxyUrl: { type: 'string', default: '', visibleIf: { mode: 'accurate' } }, // 只在 mode 为 accurate 时显示
 },
 setup(ctx) {
   ctx.config.maxItems;   // number
@@ -92,19 +123,19 @@ setup(ctx) {
 }
 ```
 
-配置存储在 `data/plugins/<name>/config.json`。
+配置存储在 `data/plugins/<name>/config.json`。常用的几项放在上面，不常改的标 `advanced: true`；控制台会把改过的项标出来，可以一键恢复默认。
 
 ## 在控制台里的位置
 
-插件不占侧栏。用户从「插件」列表点进详情页，里面有这些标签页：
+插件不占侧栏。用户从「插件」列表点进详情页，详情页上有重载、卸载按钮，以及这些标签页：
 
 | 标签页 | 来源 | 说明 |
 |---|---|---|
 | 配置 | 自动生成 | 所有插件都有，来自上面的 `config` 声明，`group` 决定分组 |
 | 详情 | 自动生成 | 版本、依赖、QQ 命令、Agent 工具 |
-| 插件自带页面 | 内置插件登记 | 在 `console/src/pluginRegistry.ts` 的 `pages` 里登记，排在最前面 |
+| 详情里还显示 | 自动生成 | 插件 API 版本、声明的权限；用到内部接口时提示迁移 |
 
-第三方插件只需要声明 `config`，配置页就有了。图标和分类也在 `pluginRegistry.ts` 登记，没有登记的显示默认图标，归到「其他」。
+插件只需要声明 `config`，配置页就有了。
 
 ## 处理消息
 
@@ -158,7 +189,7 @@ ctx.qq.selfId;           // 机器人 QQ
 ctx.qq.nameOf(conv, qq); // 群名片 / 备注 / 昵称
 ```
 
-> 插件发出的消息同样受「会话范围」限制（白名单外的会话会报错），但不受 Agent 限流与审批约束。
+> 插件发出的消息同样受「回复与人格设置」里会话开关的限制（没启用的会话会报错），但不受 Agent 限流与审批约束。
 
 ## 给 Agent 提供工具
 
@@ -181,51 +212,57 @@ ctx.tool({
 });
 ```
 
-工具调用会自动经过权限检查、审批（若策略要求）与审计。若工具内部要代表 Agent 发消息，把 `caller` 传给 `ctx.bridge.send(caller, conv, 内容)` 并设置 `selfAudited: true`，这样限流与审计记在该 Agent 名下且不会重复审批。
+需要 `agent-tools` 权限。工具调用会自动经过权限检查、审批（若策略要求）与审计。若工具内部要代表 AI 发消息，用 `ctx.qq.send(conv, 内容, { as: caller })` 并设置 `selfAudited: true`，这样限流与审计记在该 AI 名下且不会重复审批。
 
 **写好工具描述**：说明「做什么、什么时候用、返回什么」，参数都加 `.describe()`——这直接决定 AI 能否用对。
 
-## 插件间协作：服务与依赖
+## 使用内置功能与插件间协作
+
+内置的记忆功能通过 `ctx.memory` 使用（记忆功能关闭时是 `undefined`）：
 
 ```ts
-// memory 插件内部：
-ctx.provide({ remember, recall });
+if (ctx.memory) {
+  await ctx.memory.remember({ content: '小李喜欢川菜', scope: e.conv, subject: e.senderId });   // 需要 memory 权限
+  const hits = await ctx.memory.recall({ query: '小李 吃', scope: e.conv, limit: 5 });          // 需要 history 权限
+}
+```
 
-// 你的插件：
+插件之间可以互相提供服务：
+
+```ts
+// 插件 A
+ctx.provide({ summarize: async (topic: string) => '…' });
+
+// 插件 B
 definePlugin({
-  depends: ['memory'],
+  depends: ['plugin-a'],
   setup(ctx) {
-    const memory = ctx.use<MemoryService>('memory');       // 依赖缺失会抛错
-    const stickers = ctx.useOptional('stickers');          // 可选
+    const a = ctx.use<{ summarize(t: string): Promise<string> }>('plugin-a');   // 依赖缺失会抛错
+    const b = ctx.useOptional('plugin-c');                                       // 可选
   },
 });
 ```
 
-被依赖的插件重载时，依赖它的插件会自动跟着重载。系统插件提供的服务：
-
-| 插件 | 服务 |
-|---|---|
-| `memory` | `remember(input)`、`recall(query)`、`format(m)`、`engine` |
-| `stickers` | `collect(source, remark, tags, note)`、`find(q)`、`sync()` |
-| `voice` | `synthesize(text, voice?) → mp3 路径`、`speak(caller, conv, text)`、`transcribe(message)` |
-| `scheduler` | `create({conv, message, at|cron})`、`cancel(id)`、`list(conv?)`、`parseWhen(文本)` |
+被依赖的插件重载时，依赖它的插件会自动跟着重载。
 
 ## 存储
 
 ```ts
-ctx.kv.set('count', 1);                 // 简单 KV（SQLite）
+ctx.kv.set('count', 1);                 // 简单键值存储
 ctx.kv.get('count', 0);
 ctx.dataDir;                            // data/plugins/<name>/ 文件目录
-ctx.migrate(`CREATE TABLE IF NOT EXISTS weather_cache (city TEXT PRIMARY KEY, data TEXT, ts INTEGER)`);
-ctx.db.prepare('SELECT * FROM weather_cache WHERE city = ?').get(city);   // node:sqlite 同步 API
+ctx.migrate(`CREATE TABLE IF NOT EXISTS cache (city TEXT PRIMARY KEY, data TEXT, ts INTEGER)`);
+ctx.db.prepare('SELECT * FROM cache WHERE city = ?').get(city);   // node:sqlite 同步 API
 ```
 
-表名请加插件名前缀。只读访问核心表（`messages`、`conversations` 等）是允许的，但请勿修改其结构。
+声明了 `apiVersion` 的插件，`ctx.db` 是插件自己的数据库（`data/plugins/<name>/plugin.db`），和 QAB 主库完全分开，QAB 升级时的数据库迁移碰不到它。卸载插件时可以选择保留数据。
+
+读聊天记录用 `ctx.qq.recent(conv, 条数)`（需要 `history` 权限），不要直接查 QAB 的表。
 
 ## 控制台接口
 
 ```ts
-ctx.route('GET', 'stats', ({ query }) => ({ total: 42 }));
+ctx.route('GET', 'stats', ({ query }) => ({ total: 42 }));   // 需要 http 权限
 ctx.route('POST', 'items/:id', ({ params, body }) => { ... });
 ```
 
@@ -247,15 +284,18 @@ ctx.onUnload(() => { /* 关闭连接、保存状态 */ });
 | 成员 | 说明 |
 |---|---|
 | `name` `logger` `dataDir` `config` `saveConfig()` | 基本信息、日志（进入控制台日志页）、数据目录、配置 |
-| `kv` `db` `migrate()` `store` `media` | 存储与媒体服务 |
-| `qq.send()` `qq.call()` `qq.selfId` `qq.nameOf()` `qq.format()` | 发消息、调协议端、工具函数 |
-| `command()` `onRegex()` `onMessage()` `onNotice()` `onRequest()` `on()` | 事件处理 |
-| `tool()` `provide()` `use()` `useOptional()` `route()` | 对外能力 |
+| `kv` `db` `migrate()` | 存储（`db` 是插件自己的库） |
+| `qq.send()` `qq.call()` `qq.selfId` | 发消息、调 OneBot 动作、机器人 QQ 号 |
+| `qq.nameOf()` `qq.convName()` `qq.isOwner()` `qq.groups()` `qq.friends()` `qq.recent()` | 名字、管理员、联系人、聊天记录 |
+| `memory.remember()` `memory.recall()` | 内置记忆功能（关闭时 `memory` 为 `undefined`） |
+| `command()` `onRegex()` `onMessage()` `onNotice()` `onRequest()` `onConnected()` `onMessageSent()` | 事件处理 |
+| `tool()` `provide()` `use()` `useOptional()` `route()` `activity()` | 对外能力；`activity` 在控制台「动态」里记一条 |
 | `schedule()` `setInterval()` `setTimeout()` `onUnload()` | 定时与生命周期 |
 | `listCommands()` | 所有命令（做帮助菜单用） |
-| `bridge` | 底层对象（逃生舱，可能随版本变化） |
 
-完整类型见 [`src/plugins/api.ts`](../src/plugins/api.ts)。
+已弃用、下个大版本移除：`bridge`、`store`、`media`、`on()`、`qq.format()`。用到时日志和控制台会提示。
+
+完整类型见 [`src/sdk.ts`](../src/sdk.ts)。
 
 ## 最佳实践
 
@@ -277,10 +317,22 @@ await waitFor(() => mock.calls.some((c) => c.action === 'send_group_msg'));
 
 `npm run demo` 可以在浏览器里手动体验（无需真实 QQ）。
 
-## 发布与分享
+## 打包与分享
 
-1. 把插件目录做成一个 git 仓库（建议命名 `qab-plugin-<名字>`），包含 `index.ts` 与 `README.md`；如有第三方依赖，附 `package.json`。
-2. 别人通过 `qab plugin install https://github.com/you/qab-plugin-xxx` 安装（会自动 `npm install --omit=dev --ignore-scripts`）。
-3. 欢迎在本仓库提交「插件推荐」Issue，收录到社区插件列表。
+**插件包**（推荐）：一个 zip，根目录（或唯一的子目录）里有 `plugin.json` 和入口文件。
 
-> 安全提示：插件与主程序同进程运行、拥有完整权限。只安装你信任的插件。
+```json
+{ "name": "weather", "displayName": "天气", "version": "1.0.0", "apiVersion": 1, "permissions": ["send", "agent-tools"], "main": "index.js" }
+```
+
+```bash
+qab plugin pack plugins/weather          # 生成 weather-1.0.0.zip
+```
+
+别人在控制台「插件 → 安装插件」上传 zip 或填下载地址，确认权限后安装。装过的同名插件会被替换（旧版备份），插件数据保留。有第三方依赖的，把 `node_modules` 一起打进包里。
+
+**git 仓库**：`qab plugin install https://github.com/you/qab-plugin-xxx`（会自动 `npm install --omit=dev --ignore-scripts`）。
+
+欢迎在本仓库提交「插件推荐」Issue，收录到社区插件列表。
+
+> 安全提示：插件与主程序同进程运行。权限声明能挡住写错的插件，挡不住恶意插件。只安装你信任的插件。

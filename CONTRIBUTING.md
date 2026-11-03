@@ -11,14 +11,14 @@ npm run demo           # 用 Mock QQ 启动完整系统：http://127.0.0.1:3299�
 npm run dev            # 连真实协议端，文件变化自动重启
 npm run console:dev    # 控制台前端热更新（Vite，:5173，代理到 3210）
 npm run check          # 类型检查 + 全部测试（提交前必跑）
-npm run docs:gen       # 修改了工具或系统插件后重新生成参考文档
+npm run docs:gen       # 修改了工具、内置功能或随附插件后重新生成参考文档
 ```
 
 不需要真实 QQ 账号就能开发绝大部分功能：`test/mock-onebot.ts` 模拟协议端。
 
 ## 贡献什么
 
-- **插件**：通用、实用的功能优先做成插件。通用性很强、几乎人人需要的可以提议成为系统插件（`src/system-plugins/`）。
+- **插件**：通用、实用的附加功能优先做成插件（只用公开 SDK `src/sdk.ts`）。几乎人人需要、和回复主流程紧密相关的，可以提议做成内置功能（`src/features/`）。
 - **MCP 工具**：新增核心工具前先想想能否用插件 `ctx.tool()` 实现。工具名以 `qq_` 开头、描述写清"做什么/何时用/返回什么"、参数都要 `.describe()`。
 - **协议端适配**：不同 OneBot 实现的返回结构差异，在对应调用处做宽松解析。
 - **AstrBot 兼容**：补齐 `astrbot_shim/` 中缺失的 API，并在 `astrbot_shim/examples` 与 `test/astrbot.test.ts` 中加用例。
@@ -38,7 +38,7 @@ npm run docs:gen       # 修改了工具或系统插件后重新生成参考文�
 
 1. Fork 并新建分支
 2. 修改 + 测试，`npm run check` 通过
-3. 如改动了工具或系统插件：`npm run docs:gen`
+3. 如改动了工具、内置功能或随附插件：`npm run docs:gen`
 4. 更新 `CHANGELOG.md` 的 Unreleased 段
 5. 提交 PR，按模板填写
 
