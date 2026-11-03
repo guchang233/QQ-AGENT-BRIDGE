@@ -147,7 +147,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
     const incoming = req.body as any;
     // Agent 令牌走单独的接口；这里改了不会生效，直接拒绝，免得调用方以为改成功了
     if (incoming?.agents?.tokens !== undefined && JSON.stringify(incoming.agents.tokens) !== JSON.stringify(bridge.config.agents.tokens)) {
-      return reply.code(400).send({ error: 'agents.tokens 不能在这里修改：请用 PUT /api/tokens/:token（控制台「Agent 接入 → 权限与工具」）。如果你没有改令牌，刷新页面后再保存' });
+      return reply.code(400).send({ error: 'agents.tokens 不能在这里修改：请用 PUT /api/tokens/:token（控制台「AI 接入 → 权限与工具」）。如果你没有改令牌，刷新页面后再保存' });
     }
     // 掩码字段保持原值
     const merged = unmaskConfig(incoming, bridge.config);

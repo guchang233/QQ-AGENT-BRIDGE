@@ -36,34 +36,39 @@ const router = useRouter();
 const collapsed = ref(window.innerWidth < 900);
 let wasWide = window.innerWidth >= 900;
 window.addEventListener('resize', () => { const wide = window.innerWidth >= 900; if (wide !== wasWide) collapsed.value = !wide; wasWide = wide; });
-watch(() => route.meta.title, (t) => { document.title = t ? `${t} · QQ-Agent Bridge` : 'QQ-Agent Bridge'; }, { immediate: true });
+const pageTitle = computed(() => state.pageTitle || String(route.meta.title ?? ''));
+watch(pageTitle, (t) => { document.title = t ? `${t} · QQ-Agent Bridge` : 'QQ-Agent Bridge'; }, { immediate: true });
+watch(() => route.path.split('/').slice(0, 3).join('/'), () => { state.pageTitle = ''; }); // 同一个详情页里切标签不清
 const siderMini = computed(() => (isNarrow.value ? 52 : 64));
 const icon = (c: any) => () => h(NIcon, null, { default: () => h(c) });
 const menu = computed<MenuOption[]>(() => [
+  // 分组按使用频率：先看状态，再聊天，再调 AI；扩展和排查放后面
   { type: 'group', label: '概览', key: 'g0', children: [
     { label: '仪表盘', key: '/dashboard', icon: icon(SpeedometerOutline) },
     { label: '回复流程', key: '/flow', icon: icon(GitNetworkOutline) },
-    { label: '动态', key: '/activity', icon: icon(PulseOutline) },
   ] },
   { type: 'group', label: 'QQ', key: 'g1', children: [
     { label: '聊天', key: '/chat', icon: icon(ChatbubblesOutline) },
     { label: 'QQ空间', key: '/qzone', icon: icon(PlanetOutline) },
   ] },
   { type: 'group', label: 'AI', key: 'g2', children: [
-    { label: () => h(NBadge, { value: state.approvals.length, offset: [14, 0] }, { default: () => 'Agent 接入' }), key: '/agent', icon: icon(HardwareChipOutline) },
-    { label: '用量', key: '/usage', icon: icon(StatsChartOutline) },
-  ] },
-  { type: 'group', label: '功能', key: 'g-f', children: [
     { label: '回复与人格设置', key: '/features/social', icon: icon(PeopleOutline) },
+    { label: () => h(NBadge, { value: state.approvals.length, offset: [14, 0] }, { default: () => 'AI 接入' }), key: '/agent', icon: icon(HardwareChipOutline) },
     { label: '记忆', key: '/features/memory', icon: icon(BookOutline) },
     { label: '表情包', key: '/features/stickers', icon: icon(HappyOutline) },
-    { label: '更多功能', key: '/features', icon: icon(AppsOutline) },
+    { label: '用量', key: '/usage', icon: icon(StatsChartOutline) },
   ] },
-  { type: 'group', label: '系统', key: 'g3', children: [
+  { type: 'group', label: '扩展', key: 'g-f', children: [
+    { label: '更多功能', key: '/features', icon: icon(AppsOutline) },
     { label: '插件', key: '/plugins', icon: icon(ExtensionPuzzleOutline) },
+  ] },
+  { type: 'group', label: '排查', key: 'g3', children: [
+    { label: '动态', key: '/activity', icon: icon(PulseOutline) },
     { label: '调用审计', key: '/audit', icon: icon(ListOutline) },
-    { label: '动作调试台', key: '/actions', icon: icon(TerminalOutline) },
     { label: '日志', key: '/logs', icon: icon(DocumentTextOutline) },
+    { label: '动作调试台', key: '/actions', icon: icon(TerminalOutline) },
+  ] },
+  { type: 'group', label: '', key: 'g4', children: [
     { label: '设置', key: '/settings', icon: icon(SettingsOutline) },
   ] },
 ]);
@@ -91,7 +96,7 @@ async function logout() { await api('/api/logout', { method: 'POST' }); location
             </n-layout-sider>
             <n-layout>
               <n-layout-header bordered class="header">
-                <div class="title">{{ route.meta.title }}</div>
+                <div class="title">{{ pageTitle }}</div>
                 <n-space align="center">
                   <span v-if="state.status?.self" class="self">{{ state.status.self.nickname }}（{{ state.status.self.userId }}）</span>
                   <n-tag v-if="state.status?.restartNeeded" type="warning" size="small" round title="程序文件比正在运行的进程新。关掉 start.bat 窗口再打开，新版本才会生效。">需要重启</n-tag>

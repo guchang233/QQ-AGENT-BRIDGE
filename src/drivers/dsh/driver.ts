@@ -211,7 +211,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
       p = cat.providers.find((x) => x.id === d?.provider) ?? cat.providers[0];
       m = p?.models.find((x) => x.id === d?.model) ?? p?.models[0];
       if (!p || !m) return { provider: c.provider, model: c.model, reasoningEffort: c.reasoningEffort };
-      warn = `配置的模型 ${c.provider}/${c.model} 在 DSH 里不存在，已改用 ${p.id}/${m.id}。请在控制台「Agent 接入 → DeepSeek Harness」重新选择`;
+      warn = `配置的模型 ${c.provider}/${c.model} 在 DSH 里不存在，已改用 ${p.id}/${m.id}。请在控制台「AI 接入 → DeepSeek Harness」重新选择`;
     }
     const effort = !m.efforts.length || m.efforts.includes(c.reasoningEffort) ? c.reasoningEffort : (m.defaultEffort ?? m.efforts[0]);
     if (warn !== this.modelWarning) {
@@ -246,7 +246,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
     const reason = String(last?.message ?? '').replace(/^session.selectModel 失败：/, '');
     if (/not[- ]?found/i.test(reason) && !/model|provider/i.test(reason)) { this.modelApplied.set(sessionId, epoch); return 'not-found'; }
     const first = !this.modelError;
-    this.modelError = `模型 ${c.provider}/${c.model} 不可用（${reason}）。请在控制台「Agent 接入 → DeepSeek Harness」从下拉框选择可用的模型`;
+    this.modelError = `模型 ${c.provider}/${c.model} 不可用（${reason}）。请在控制台「AI 接入 → DeepSeek Harness」从下拉框选择可用的模型`;
     this.catalogCache = null; // 下次重新读模型目录
     this.setState('error', this.modelError);
     if (first) this.bridge.activity({ kind: 'info', level: 'error', actor: 'DSH', title: 'DSH 模型不可用，消息没有送出', detail: this.modelError });
@@ -269,7 +269,7 @@ export class DshDriver extends EventEmitter implements AgentDriver {
       // 安全兜底：预设必须存在，否则 DSH 会退回带 shell/文件工具的默认预设
       const presets = await this.listPresets();
       if (!presets.some((x) => x.id === this.cfg.preset)) {
-        throw new DshError('preset', `DSH 中没有预设「${this.cfg.preset}」。请在控制台「Agent 接入 → DeepSeek Harness」点击「一键接入」并重启 DSH`);
+        throw new DshError('preset', `DSH 中没有预设「${this.cfg.preset}」。请在控制台「AI 接入 → DeepSeek Harness」点击「一键接入」并重启 DSH`);
       }
       const workspaceId = await this.ensureWorkspace();
       const v: any = await this.client.call('session/create', { workspaceId, agentPreset: this.cfg.preset });

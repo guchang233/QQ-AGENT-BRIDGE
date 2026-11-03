@@ -37,6 +37,8 @@ export const state = reactive({
   status: null as any,
   approvals: [] as any[],
   wsOpen: false,
+  /** 详情页（功能、插件）用自己的名字做标题，覆盖路由里的通用标题 */
+  pageTitle: '',
 });
 
 /** 窄屏（手机）：表单标签放到上方、侧栏收窄 */

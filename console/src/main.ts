@@ -12,7 +12,7 @@ const router = createRouter({
     { path: '/chat/:conv?', component: () => import('./views/Chat.vue'), meta: { title: '聊天' } },
     { path: '/qzone', component: () => import('./views/QZone.vue'), meta: { title: 'QQ空间' } },
     { path: '/stickers', redirect: '/features/stickers' },
-    { path: '/agent', component: () => import('./views/Agent.vue'), meta: { title: 'Agent 接入' } },
+    { path: '/agent', component: () => import('./views/Agent.vue'), meta: { title: 'AI 接入' } },
     { path: '/social', redirect: '/features/social' },
     { path: '/features', component: () => import('./views/Plugins.vue'), meta: { title: '功能' } },
     { path: '/features/:name/:tab?', component: () => import('./views/PluginDetail.vue'), meta: { title: '功能' } },

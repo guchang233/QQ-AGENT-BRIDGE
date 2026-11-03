@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { NButton, NCheckbox, NIcon, NPopconfirm, NSpin, NSwitch, NTab, NTabs, NTag, useMessage } from 'naive-ui';
 import { ArrowBackOutline } from '@vicons/ionicons5';
-import { api, onPush } from '../api';
+import { api, onPush, state } from '../api';
 import { colorOf, metaOf } from '../pluginRegistry';
 import PluginConfig from '../components/PluginConfig.vue';
 
@@ -27,6 +27,7 @@ const go = (t: string) => router.replace(`${base.value}/${name.value}/${t}`);
 async function load() {
   const list: any[] = await api('/api/plugins');
   plugin.value = list.find((p) => p.name === name.value) ?? null;
+  state.pageTitle = plugin.value?.displayName ?? '';
   missing.value = !plugin.value;
   // 旧链接 /plugins/<内置功能> 转到 /features/<内置功能>
   if (plugin.value && !!plugin.value.builtin !== (base.value === '/features')) router.replace(route.fullPath.replace(/^\/(plugins|features)/, plugin.value.builtin ? '/features' : '/plugins'));

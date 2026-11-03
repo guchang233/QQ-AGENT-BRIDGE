@@ -199,7 +199,7 @@ onMounted(enter);
               <label>模型<n-select :value="mf.model" :options="models.modelOptions.value" filterable @update:value="models.pickModel" /></label>
               <label>思考强度<n-select v-model:value="mf.reasoningEffort" :options="models.effortOptions.value" /></label>
             </div>
-            <div v-else class="hint">读不到 DSH 的模型列表，会用 DSH 的默认模型。之后可以在「Agent 接入」里改。</div>
+            <div v-else class="hint">读不到 DSH 的模型列表，会用 DSH 的默认模型。之后可以在「AI 接入」里改。</div>
             <div v-if="models.invalid.value" class="hint bad">当前选的模型在 DSH 里不存在，请重新选择。</div>
           </div>
         </n-spin>

@@ -94,7 +94,7 @@ onUnmounted(() => { off(); clearTimeout(t); });
   <div class="page">
     <n-alert v-if="err" type="warning">{{ err }}</n-alert>
     <PageHint text="决定机器人在哪些会话里回复、用什么人格。AI 像真人群友一样：被叫到时醒来，自己决定说不说、接下来潜水还是沉睡。">
-      需要先在「Agent 接入」页接入 DeepSeek Harness。唤醒参数（关键词、概率、主动发言等）在
+      需要先在「AI 接入」页接入 DeepSeek Harness。唤醒参数（关键词、概率、主动发言等）在
       <a style="cursor: pointer; color: #12b7f5" @click="router.push('/features/social/config')">设置</a> 页调整。
       QQ 里管理员也可以发：/仿真 开|关|唤醒|重置、/人格 名字、进入角色扮演：名字。
     </PageHint>
