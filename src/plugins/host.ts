@@ -27,6 +27,8 @@ export interface PluginState {
   entry?: string;
   manifest: PluginMeta;
   system?: boolean;
+  /** 内置功能（src/features）：不是插件，不出现在插件页，设置存进主配置 features.<name> */
+  builtin?: boolean;
   enabled: boolean;
   loaded: boolean;
   error?: string;
@@ -51,11 +53,13 @@ export interface PluginState {
 
 export interface ExternalDispatcher { name: string; dispatch(e: MessageEvent): Promise<void> }
 
-interface Candidate { name: string; dir: string; entry: string; system: boolean; def: PluginDefinition<any>; manifestFile?: PluginMeta }
+interface Candidate { name: string; dir: string; entry: string; system: boolean; builtin: boolean; def: PluginDefinition<any>; manifestFile?: PluginMeta }
+interface Source { dir: string; system: boolean; builtin?: boolean }
 
 /**
  * 插件宿主：
- * - 两个来源：src/system-plugins（系统插件，随程序发布）与 plugins/（用户插件，可热重载）
+ * - 三个来源：src/features（内置功能，程序本体的一部分）、src/system-plugins（随程序发布的小插件）、plugins/（用户插件，可热重载）
+ * - 内置功能与插件共用加载机制，但不出现在插件页，设置存进主配置 features.<name>
  * - 插件形式：目录（index.ts|js，可选 plugin.json）或单文件 plugins/foo.ts
  * - 依赖解析（depends/softDepends）→ 拓扑顺序加载；服务通过 provide/use 共享
  */
@@ -64,7 +68,7 @@ export class PluginHost extends EventEmitter {
   external: ExternalDispatcher[] = [];
   services = new Map<string, unknown>();
   private systemModules = new Map<string, any>();
-  private sources: { dir: string; system: boolean }[];
+  private sources: Source[];
   private watchers: fs.FSWatcher[] = [];
   private reloadTimers = new Map<string, NodeJS.Timeout>();
 
@@ -73,6 +77,7 @@ export class PluginHost extends EventEmitter {
     this.setMaxListeners(50);
     bridge.pluginHost = this;
     this.sources = [
+      { dir: path.join(ROOT, 'src', 'features'), system: true, builtin: true },
       { dir: path.join(ROOT, 'src', 'system-plugins'), system: true },
       { dir: resolveFromRoot(bridge.config.plugins.dir), system: false },
     ];
@@ -88,6 +93,7 @@ export class PluginHost extends EventEmitter {
       if (!fs.existsSync(src.dir)) continue;
       for (const e of fs.readdirSync(src.dir, { withFileTypes: true })) {
         if (e.name.startsWith('.') || e.name.startsWith('_') || e.name === 'node_modules') continue;
+        if (src.builtin && !e.isDirectory()) continue; // 内置功能目录里的单文件是共用代码（如 kit.ts），不是功能
         let entry: string | undefined;
         let dir: string;
         let manifestFile: PluginMeta | undefined;
@@ -112,10 +118,10 @@ export class PluginHost extends EventEmitter {
           if (typeof def?.setup !== 'function') throw new Error('未导出 setup（请 export default definePlugin({...})）');
           const name = def.name ?? manifestFile?.name ?? fallbackName;
           if (out.some((c) => c.name === name)) { log.warn(`插件名重复：${name}（${entry}），已忽略`); continue; }
-          out.push({ name, dir, entry, system: src.system, def, manifestFile });
+          out.push({ name, dir, entry, system: src.system, builtin: !!src.builtin, def, manifestFile });
         } catch (err: any) {
           const name = manifestFile?.name ?? fallbackName;
-          const st = this.blank(name, dir, entry, src.system, { ...manifestFile, name });
+          const st = this.blank(name, dir, entry, src.system, { ...manifestFile, name }, !!src.builtin);
           st.error = `导入失败：${err?.message ?? err}`;
           this.plugins.set(name, st);
           log.error(`导入插件 ${name} 失败：${err?.stack ?? err}`);
@@ -125,19 +131,45 @@ export class PluginHost extends EventEmitter {
     return out;
   }
 
-  isEnabled(name: string, meta: PluginMeta) {
+  isEnabled(name: string, meta: PluginMeta, builtin = false) {
+    if (builtin) {
+      const v = this.bridge.config.features[name]?.enabled;
+      if (typeof v === 'boolean') return v;
+      return meta.defaultEnabled ?? true;
+    }
     const p = this.bridge.config.plugins;
     if (name in p.overrides) return p.overrides[name];
     if (p.disabled.includes(name)) return false;
     return meta.defaultEnabled ?? true;
   }
 
-  private blank(name: string, dir: string, entry: string | undefined, system: boolean, meta: PluginMeta): PluginState {
+  private blank(name: string, dir: string, entry: string | undefined, system: boolean, meta: PluginMeta, builtin = false): PluginState {
     return {
-      name, dir, entry, manifest: { ...meta, name }, system, enabled: this.isEnabled(name, meta), loaded: false,
+      name, dir, entry, manifest: { ...meta, name }, system, builtin, enabled: this.isEnabled(name, meta, builtin), loaded: false,
       handlers: [], noticeHandlers: [], requestHandlers: [], tools: [], crons: [], unloaders: [], routes: [],
-      schema: meta.config, config: this.readConfig(name, meta.config), kind: 'native', calls: 0, provides: [], depends: [...(meta.depends ?? [])],
+      schema: meta.config, config: this.readConfig(name, meta.config, builtin), kind: 'native', calls: 0, provides: [], depends: [...(meta.depends ?? [])],
     };
+  }
+
+  /**
+   * 旧版本里内置功能是「系统插件」：设置在 data/plugins/<name>/config.json，开关在 plugins.overrides。
+   * 首次启动新版本时搬进主配置 features.<name>。旧文件原样保留（降级时还能用），搬过的不再重复搬。
+   */
+  private migrateBuiltin(cands: Candidate[]) {
+    const cfg = structuredClone(this.bridge.config);
+    let changed = false;
+    for (const c of cands.filter((x) => x.builtin)) {
+      if (cfg.features[c.name]) continue;
+      const sec: Record<string, unknown> = {};
+      try { Object.assign(sec, JSON.parse(fs.readFileSync(path.join(this.dataDirOf(c.name), 'config.json'), 'utf8'))); } catch { /* 没有旧设置 */ }
+      if (c.name in cfg.plugins.overrides) { sec.enabled = cfg.plugins.overrides[c.name]; delete cfg.plugins.overrides[c.name]; }
+      if (cfg.plugins.disabled.includes(c.name)) { sec.enabled = false; cfg.plugins.disabled = cfg.plugins.disabled.filter((n) => n !== c.name); }
+      if (!Object.keys(sec).length) continue;
+      cfg.features[c.name] = sec;
+      changed = true;
+      log.info(`已把「${c.def.displayName ?? c.name}」的设置搬进主配置（features.${c.name}）`);
+    }
+    if (changed) this.bridge.updateConfig(cfg);
   }
 
   // ==================================================================== 加载
@@ -147,7 +179,9 @@ export class PluginHost extends EventEmitter {
     for (const st of [...this.plugins.values()]) if (st.kind === 'native') await this.teardown(st);
     for (const [k, v] of this.plugins) if (v.kind === 'native') this.plugins.delete(k);
     this.defs.clear();
-    for (const c of await this.discover()) this.defs.set(c.name, c);
+    const cands = await this.discover();
+    this.migrateBuiltin(cands);
+    for (const c of cands) this.defs.set(c.name, c);
     for (const name of this.order([...this.defs.keys()])) await this.loadOne(name);
     log.info(`插件：${[...this.plugins.values()].filter((p) => p.loaded).map((p) => p.name).join('、') || '无'}`);
     this.watch();
@@ -172,7 +206,7 @@ export class PluginHost extends EventEmitter {
     const c = this.defs.get(name);
     if (!c) return;
     const meta: PluginMeta = { ...c.manifestFile, ...c.def, name };
-    const st = this.blank(name, c.dir, c.entry, c.system, meta);
+    const st = this.blank(name, c.dir, c.entry, c.system, meta, c.builtin);
     this.plugins.set(name, st);
     if (!st.enabled) return;
     for (const dep of meta.depends ?? []) {
@@ -182,7 +216,7 @@ export class PluginHost extends EventEmitter {
     try {
       await c.def.setup(this.makeContext(st));
       st.loaded = true;
-      log.info(`已加载${c.system ? '系统' : ''}插件 ${name}${meta.version ? ` v${meta.version}` : ''}`);
+      log.info(`已加载${c.builtin ? '内置功能' : c.system ? '系统插件' : '插件'} ${name}${meta.version ? ` v${meta.version}` : ''}`);
     } catch (e: any) {
       st.error = e?.message ?? String(e);
       log.error(`加载插件 ${name} 失败：${e?.stack ?? st.error}`);
@@ -227,11 +261,14 @@ export class PluginHost extends EventEmitter {
   }
 
   async setEnabled(name: string, enabled: boolean) {
-    const cfg = structuredClone(this.bridge.config);
-    cfg.plugins.overrides[name] = enabled;
-    cfg.plugins.disabled = cfg.plugins.disabled.filter((n) => n !== name);
-    this.bridge.updateConfig(cfg);
     const st = this.plugins.get(name);
+    const cfg = structuredClone(this.bridge.config);
+    if (st?.builtin) cfg.features[name] = { ...cfg.features[name], enabled };
+    else {
+      cfg.plugins.overrides[name] = enabled;
+      cfg.plugins.disabled = cfg.plugins.disabled.filter((n) => n !== name);
+    }
+    this.bridge.updateConfig(cfg);
     if (!st) return;
     if (st.ops) { st.enabled = enabled; return st.ops.setEnabled(enabled); }
     await this.reload(name);
@@ -240,17 +277,24 @@ export class PluginHost extends EventEmitter {
   // ==================================================================== 配置
   private dataDirOf(name: string) { const d = path.join(this.bridge.dataDir, 'plugins', name); fs.mkdirSync(d, { recursive: true }); return d; }
 
-  readConfig(name: string, schema?: ConfigSchema | Record<string, any>) {
+  readConfig(name: string, schema?: ConfigSchema | Record<string, any>, builtin = false) {
     const defaults: Record<string, any> = {};
     for (const [k, v] of Object.entries(schema ?? {})) if (v && typeof v === 'object' && 'default' in v) defaults[k] = structuredClone((v as any).default);
-    let saved = {};
-    try { saved = JSON.parse(fs.readFileSync(path.join(this.dataDirOf(name), 'config.json'), 'utf8')); } catch { /* none */ }
+    let saved: Record<string, any> = {};
+    if (builtin) { const { enabled: _e, ...rest } = this.bridge.config.features[name] ?? {}; saved = rest; }
+    else try { saved = JSON.parse(fs.readFileSync(path.join(this.dataDirOf(name), 'config.json'), 'utf8')); } catch { /* none */ }
     return { ...defaults, ...saved };
   }
 
   saveConfig(name: string, cfg: Record<string, any>) {
-    atomicWrite(path.join(this.dataDirOf(name), 'config.json'), JSON.stringify(cfg, null, 2));
     const p = this.plugins.get(name);
+    if (p?.builtin) {
+      const next = structuredClone(this.bridge.config);
+      const { enabled: _e, ...rest } = cfg;
+      const prev = next.features[name]?.enabled;
+      next.features[name] = typeof prev === 'boolean' ? { ...rest, enabled: prev } : rest;
+      this.bridge.updateConfig(next);
+    } else atomicWrite(path.join(this.dataDirOf(name), 'config.json'), JSON.stringify(cfg, null, 2));
     if (p) p.config = cfg;
   }
 
@@ -279,7 +323,7 @@ export class PluginHost extends EventEmitter {
   list() {
     return [...this.plugins.values()].map((p) => ({
       name: p.name, displayName: p.manifest.displayName ?? p.name, version: p.manifest.version ?? '', description: p.manifest.description ?? '',
-      author: p.manifest.author ?? '', enabled: p.enabled, loaded: p.loaded, error: p.error, kind: p.kind, system: !!p.system, calls: p.calls, lastError: p.lastError,
+      author: p.manifest.author ?? '', enabled: p.enabled, loaded: p.loaded, error: p.error, kind: p.kind, system: !!p.system, builtin: !!p.builtin, calls: p.calls, lastError: p.lastError,
       commands: p.commandList ?? p.handlers.filter((h) => h.kind === 'command').map((h) => ({ names: h.names!, desc: h.opts.desc ?? '', usage: h.opts.usage })),
       handlers: p.handlers.length, tools: p.tools, crons: p.crons.length, schema: p.schema, config: p.config, depends: p.depends, provides: p.provides,
       routes: (p.routes ?? []).map((r) => `${r.method} ${r.path}`),

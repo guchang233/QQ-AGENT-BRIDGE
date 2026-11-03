@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { NButton, NIcon, NInput, NRadioButton, NRadioGroup, NSwitch, useMessage } from 'naive-ui';
 import { api, onPush } from '../api';
 import { CATEGORIES, colorOf, metaOf } from '../pluginRegistry';
 
 const msg = useMessage();
 const router = useRouter();
+const route = useRoute();
+// 同一个页面两种用法：/features 列内置功能，/plugins 列插件
+const features = computed(() => route.path.startsWith('/features'));
 const list = ref<any[]>([]);
 const tab = ref<'system' | 'user' | 'astrbot'>('system');
 const q = ref('');
@@ -27,9 +30,10 @@ async function toggle(p: any, on: boolean) {
     load();
   }
 }
-const open = (p: any) => router.push(`/plugins/${p.name}`);
+const open = (p: any) => router.push(`/${p.builtin ? 'features' : 'plugins'}/${p.name}`);
 
-const inTab = (p: any, t: string) => (t === 'astrbot' ? p.kind === 'astrbot' : p.kind !== 'astrbot' && (t === 'system') === p.system);
+const inTab = (p: any, t: string) => features.value ? !!p.builtin
+  : !p.builtin && (t === 'astrbot' ? p.kind === 'astrbot' : p.kind !== 'astrbot' && (t === 'system') === p.system);
 const count = (t: string) => list.value.filter((p) => inTab(p, t)).length;
 // 按分类固定排列：开关之后卡片留在原位，不会跳走
 const groups = computed(() => {
@@ -45,9 +49,10 @@ onUnmounted(off);
 
 <template>
   <div class="page">
-    <div class="toolbar">
+    <div v-if="features" class="hint">内置功能是 QAB 本体的一部分，随版本更新。点开可以调整设置；用不到的功能可以关掉。</div>
+    <div v-else class="toolbar">
       <n-radio-group v-model:value="tab" size="small">
-        <n-radio-button value="system">系统插件 {{ count('system') }}</n-radio-button>
+        <n-radio-button value="system">随附插件 {{ count('system') }}</n-radio-button>
         <n-radio-button value="user">我的插件 {{ count('user') }}</n-radio-button>
         <n-radio-button value="astrbot">AstrBot {{ count('astrbot') }}</n-radio-button>
       </n-radio-group>
@@ -55,8 +60,8 @@ onUnmounted(off);
       <span class="grow" />
       <n-button size="small" quaternary @click="rescan">重新扫描</n-button>
     </div>
-    <div v-if="tab === 'user'" class="hint">插件放在 <code>plugins/</code> 目录，保存即热重载。新建：<code>qab plugin new 名字</code>；开发指南见 <code>docs/plugins.md</code>。</div>
-    <div v-if="tab === 'astrbot'" class="hint">AstrBot 插件放在 <code>astrbot_plugins/</code>，需在「设置 → 媒体与插件」开启兼容层并重启。</div>
+    <div v-if="!features && tab === 'user'" class="hint">插件放在 <code>plugins/</code> 目录，保存即热重载。新建：<code>qab plugin new 名字</code>；开发指南见 <code>docs/plugins.md</code>。</div>
+    <div v-if="!features && tab === 'astrbot'" class="hint">AstrBot 插件放在 <code>astrbot_plugins/</code>，需在「设置 → 媒体与插件」开启兼容层并重启。</div>
     <div v-if="!groups.length" class="empty hint">{{ q ? '没有找到匹配的插件' : '这里还没有插件' }}</div>
 
     <section v-for="g in groups" :key="g.key" class="group">
@@ -70,7 +75,7 @@ onUnmounted(off);
           </div>
           <div class="side" @click.stop @keydown.enter.stop>
             <n-switch size="small" :value="p.enabled" :loading="busy.has(p.name)" :aria-label="`${p.enabled ? '停用' : '启用'}${p.displayName}`" @update:value="(v: boolean) => toggle(p, v)" />
-            <n-button text size="tiny" class="cfg" @click="open(p)">配置</n-button>
+            <n-button text size="tiny" class="cfg" @click="open(p)">{{ features ? '设置' : '配置' }}</n-button>
           </div>
         </article>
       </div>

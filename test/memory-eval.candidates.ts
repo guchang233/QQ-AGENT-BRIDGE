@@ -1,7 +1,7 @@
 /** 新版检索的被测配置。每个配置只改一处，用来判断这项功能有没有用。 */
 import { DatabaseSync } from 'node:sqlite';
-import { MemoryEngine, type RecallQuery } from '../src/system-plugins/memory/engine.ts';
-import { contextFor } from '../src/system-plugins/memory/context.ts';
+import { MemoryEngine, type RecallQuery } from '../src/features/memory/engine.ts';
+import { contextFor } from '../src/features/memory/context.ts';
 import { fixture, NOW, type Adapter, type Fixture } from './memory-eval.lib.ts';
 
 const DAY = 86_400_000;

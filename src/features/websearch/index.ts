@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import YAML from 'yaml';
-import { definePlugin, z } from '../../sdk.ts';
+import { definePlugin, z } from '../kit.ts';
 import { safeFetch, htmlToText, decode, resolveSafe } from '../../util/safe-fetch.ts';
 
 /**

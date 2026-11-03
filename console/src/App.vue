@@ -8,6 +8,7 @@ import {
 import {
   SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
   TerminalOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, StatsChartOutline, PulseOutline,
+  PeopleOutline, BookOutline, HappyOutline, AppsOutline,
 } from '@vicons/ionicons5';
 import { state, checkSession, api, isNarrow } from './api';
 import Login from './components/Login.vue';
@@ -50,6 +51,12 @@ const menu = computed<MenuOption[]>(() => [
     { label: () => h(NBadge, { value: state.approvals.length, offset: [14, 0] }, { default: () => 'Agent 接入' }), key: '/agent', icon: icon(HardwareChipOutline) },
     { label: '用量', key: '/usage', icon: icon(StatsChartOutline) },
   ] },
+  { type: 'group', label: '功能', key: 'g-f', children: [
+    { label: '仿真与人格', key: '/features/social', icon: icon(PeopleOutline) },
+    { label: '记忆', key: '/features/memory', icon: icon(BookOutline) },
+    { label: '表情包', key: '/features/stickers', icon: icon(HappyOutline) },
+    { label: '更多功能', key: '/features', icon: icon(AppsOutline) },
+  ] },
   { type: 'group', label: '系统', key: 'g3', children: [
     { label: '插件', key: '/plugins', icon: icon(ExtensionPuzzleOutline) },
     { label: '调用审计', key: '/audit', icon: icon(ListOutline) },
@@ -58,7 +65,11 @@ const menu = computed<MenuOption[]>(() => [
     { label: '设置', key: '/settings', icon: icon(SettingsOutline) },
   ] },
 ]);
-const active = computed(() => '/' + (route.path.split('/')[1] ?? ''));
+const PINNED = ['social', 'memory', 'stickers'];
+const active = computed(() => {
+  const [, top = '', sub = ''] = route.path.split('/');
+  return top === 'features' && PINNED.includes(sub) ? `/features/${sub}` : `/${top}`;
+});
 onMounted(() => checkSession().catch(() => { state.checked = true; }));
 async function logout() { await api('/api/logout', { method: 'POST' }); location.reload(); }
 </script>

@@ -1,4 +1,4 @@
-import { definePlugin, z, parseConv, convKey, oneLine } from '../../sdk.ts';
+import { definePlugin, z, parseConv, convKey, oneLine } from '../kit.ts';
 import { quote } from '../../message/envelope.ts';
 
 interface AskRow {

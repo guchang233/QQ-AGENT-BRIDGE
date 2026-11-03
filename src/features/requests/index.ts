@@ -1,4 +1,4 @@
-import { definePlugin } from '../../sdk.ts';
+import { definePlugin } from '../kit.ts';
 
 /** 自动处理好友申请 / 加群申请 / 入群邀请（按规则），并通知管理员。 */
 export default definePlugin({

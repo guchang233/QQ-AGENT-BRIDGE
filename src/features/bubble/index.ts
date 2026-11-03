@@ -1,4 +1,4 @@
-import { definePlugin, parseConv, convKey } from '../../sdk.ts';
+import { definePlugin, parseConv, convKey } from '../kit.ts';
 
 interface BubbleState { nextAt: number; until: number }
 

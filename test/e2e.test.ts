@@ -471,6 +471,38 @@ describe('系统插件', () => {
     expect((host as any).defs.get('memory').def).toBe(def); // 系统插件不重新导入
   });
 
+  it('内置功能：设置和开关存进主配置，旧版插件设置自动搬过来', async () => {
+    const host = bridge.pluginHost!;
+    expect(host.plugins.get('social')).toMatchObject({ builtin: true });
+    expect(host.plugins.get('guard')?.builtin).toBeFalsy();
+    host.saveConfig('stats', { ...host.plugins.get('stats')!.config, reportCron: '0 22 * * *' });
+    expect(bridge.config.features.stats).toMatchObject({ reportCron: '0 22 * * *' });
+    expect(fs.existsSync(path.join(bridge.dataDir, 'plugins', 'stats', 'config.json'))).toBe(false);
+    await host.setEnabled('stats', false);
+    expect(bridge.config.features.stats).toMatchObject({ enabled: false, reportCron: '0 22 * * *' });
+    expect(bridge.config.plugins.overrides.stats).toBeUndefined();
+    await host.setEnabled('stats', true);
+    // 模拟旧版本：设置在 data/plugins/<名>/config.json，开关在 plugins.overrides
+    const cfg = structuredClone(bridge.config);
+    delete cfg.features.voice;
+    cfg.plugins.overrides.voice = false;
+    bridge.updateConfig(cfg);
+    fs.writeFileSync(path.join(bridge.dataDir, 'plugins', 'voice', 'config.json'), JSON.stringify({ maxChars: 123 }));
+    await host.loadAll();
+    expect(bridge.config.features.voice).toEqual({ maxChars: 123, enabled: false });
+    expect(bridge.config.plugins.overrides.voice).toBeUndefined();
+    expect(host.plugins.get('voice')).toMatchObject({ enabled: false, loaded: false });
+    expect(host.plugins.get('voice')!.config.maxChars).toBe(123);
+    await host.setEnabled('voice', true);
+    expect(host.plugins.get('voice')?.loaded).toBe(true);
+    // /api/config 不暴露也不覆盖内置功能的设置
+    const base = `http://127.0.0.1:${PORT}`;
+    const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'secret123' }) });
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const r = await fetch(`${base}/api/config`, { headers: { cookie } }).then((x) => x.json());
+    expect(r.config.features).toBeUndefined();
+  });
+
   it('用户插件改坏后保留上一版，不会从列表消失', async () => {
     const host = bridge.pluginHost!;
     const file = path.join((host as any).sources.find((s: any) => !s.system).dir, 'reload-test.ts');

@@ -1,4 +1,4 @@
-import { definePlugin, z, parseConv, convKey } from '../../sdk.ts';
+import { definePlugin, z, parseConv, convKey } from '../kit.ts';
 
 /** 群聊统计：发言排行、活跃时段、消息类型；可定时发日报。 */
 export default definePlugin({

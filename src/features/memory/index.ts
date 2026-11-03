@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { definePlugin, z, parseConv, convKey, oneLine, type StoredMessage } from '../../sdk.ts';
+import { definePlugin, z, parseConv, convKey, oneLine, type StoredMessage } from '../kit.ts';
 import { MemoryEngine, KINDS, AGENT_KINDS, KIND_LABEL, TRUST_LABEL, overlap, tokens, type MemoryView, type MemoryKind, type RecallQuery, type RememberInput } from './engine.ts';
 import { contextFor } from './context.ts';
 import { quote } from '../../message/envelope.ts';

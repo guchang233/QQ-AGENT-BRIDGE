@@ -15,17 +15,21 @@ const missing = ref(false);
 const busy = ref(false);
 
 const name = computed(() => String(route.params.name));
+const base = computed(() => (route.path.startsWith('/features') ? '/features' : '/plugins'));
+const what = computed(() => (base.value === '/features' ? '功能' : '插件'));
 const meta = computed(() => metaOf(name.value));
 const pages = computed(() => meta.value.pages ?? []);
 // 没有自带页面的插件直接进配置页
 const tab = computed(() => String(route.params.tab || pages.value[0]?.key || 'config'));
 const page = computed(() => pages.value.find((p) => p.key === tab.value));
-const go = (t: string) => router.replace(`/plugins/${name.value}/${t}`);
+const go = (t: string) => router.replace(`${base.value}/${name.value}/${t}`);
 
 async function load() {
   const list: any[] = await api('/api/plugins');
   plugin.value = list.find((p) => p.name === name.value) ?? null;
   missing.value = !plugin.value;
+  // 旧链接 /plugins/<内置功能> 转到 /features/<内置功能>
+  if (plugin.value && !!plugin.value.builtin !== (base.value === '/features')) router.replace(route.fullPath.replace(/^\/(plugins|features)/, plugin.value.builtin ? '/features' : '/plugins'));
 }
 async function toggle(on: boolean) {
   busy.value = true;
@@ -48,13 +52,13 @@ watch(name, load);
 
 <template>
   <div v-if="missing" class="page">
-    <div class="hint">没有找到插件「{{ name }}」。</div>
-    <div><n-button size="small" @click="router.push('/plugins')">返回插件列表</n-button></div>
+    <div class="hint">没有找到{{ what }}「{{ name }}」。</div>
+    <div><n-button size="small" @click="router.push(base)">返回{{ what }}列表</n-button></div>
   </div>
   <n-spin v-else-if="!plugin" />
   <div v-else class="page">
     <header class="head">
-      <n-button quaternary circle size="small" aria-label="返回插件列表" title="返回插件列表" @click="router.push('/plugins')"><template #icon><n-icon :component="ArrowBackOutline" /></template></n-button>
+      <n-button quaternary circle size="small" :aria-label="`返回${what}列表`" :title="`返回${what}列表`" @click="router.push(base)"><template #icon><n-icon :component="ArrowBackOutline" /></template></n-button>
       <span class="tile" :class="{ off: !plugin.enabled }" :style="{ '--c': colorOf(name) }"><n-icon :component="meta.icon" :size="20" /></span>
       <div class="title">
         <div class="name">{{ plugin.displayName }}
@@ -63,7 +67,7 @@ watch(name, load);
         </div>
         <div class="desc">{{ plugin.description }}</div>
       </div>
-      <n-button size="small" quaternary :disabled="!plugin.enabled || busy" @click="reload">重载</n-button>
+      <n-button v-if="!plugin.builtin" size="small" quaternary :disabled="!plugin.enabled || busy" @click="reload">重载</n-button>
       <n-switch :value="plugin.enabled" :loading="busy" :aria-label="`${plugin.enabled ? '停用' : '启用'}${plugin.displayName}`" @update:value="toggle" />
     </header>
 
@@ -72,12 +76,12 @@ watch(name, load);
 
     <n-tabs :value="tab" type="line" size="small" @update:value="go">
       <n-tab v-for="p in pages" :key="p.key" :name="p.key">{{ p.label }}</n-tab>
-      <n-tab name="config">配置</n-tab>
+      <n-tab name="config">{{ plugin.builtin ? '设置' : '配置' }}</n-tab>
       <n-tab name="info">详情</n-tab>
     </n-tabs>
 
     <template v-if="page">
-      <div v-if="!plugin.loaded" class="off-note hint">插件未启用。打开右上角的开关后，这里才有内容。</div>
+      <div v-if="!plugin.loaded" class="off-note hint">{{ what }}未启用。打开右上角的开关后，这里才有内容。</div>
       <component :is="page.component" v-else :key="`${name}-${page.key}`" />
     </template>
     <PluginConfig v-else-if="tab === 'config'" :plugin="plugin" @saved="load" />

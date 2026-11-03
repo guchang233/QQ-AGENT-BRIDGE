@@ -1,5 +1,5 @@
 import { Cron } from 'croner';
-import { definePlugin, z, parseConv, convKey } from '../../sdk.ts';
+import { definePlugin, z, parseConv, convKey } from '../kit.ts';
 
 interface Job { id: number; conv: string; message: string; kind: 'once' | 'cron'; at: number; cron: string; mention: string; creator: string; enabled: number; last_run: number; created: number }
 

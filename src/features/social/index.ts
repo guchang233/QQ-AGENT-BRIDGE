@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { definePlugin, z, parseConv, convKey, oneLine } from '../../sdk.ts';
+import { definePlugin, z, parseConv, convKey, oneLine } from '../kit.ts';
 import { HOME } from '../../config.ts';
 import type { StoredMessage } from '../../store/db.ts';
 import type { TurnResult } from '../../drivers/types.ts';

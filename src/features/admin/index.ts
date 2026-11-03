@@ -1,4 +1,4 @@
-import { definePlugin } from '../../sdk.ts';
+import { definePlugin } from '../kit.ts';
 
 /** 基础管理：帮助菜单、状态、插件开关（管理员）、只读开关（管理员）。 */
 export default definePlugin({

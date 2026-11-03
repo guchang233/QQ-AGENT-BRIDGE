@@ -21,10 +21,12 @@ const { extraTools } = await import('../src/mcp/server.ts');
 const mock = new MockOneBot({ wsPort: 25001, httpPort: 25000, token: '' });
 await mock.start();
 const overrides = Object.fromEntries(fs.readdirSync(path.join(ROOT, 'src', 'system-plugins')).map((n) => [n, true]));
+const features = Object.fromEntries(fs.readdirSync(path.join(ROOT, 'src', 'features'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => [e.name, { enabled: true }]));
 const bridge = new Bridge(ConfigSchema.parse({
   onebot: { wsUrl: 'ws://127.0.0.1:25001', httpUrl: 'http://127.0.0.1:25000', autoDiscover: false },
   server: { port: 25210, consolePassword: 'x', sessionSecret: 'x' },
   dataDir: path.join(tmp, 'data'),
+  features,
   plugins: { dir: path.join(tmp, 'none'), overrides, hotReload: false },
 }));
 const host = new PluginHost(bridge);
@@ -67,17 +69,18 @@ ${core.map(section).join('\n')}
 ${pluginTools.map(section).join('\n')}`;
 
 const plugins = host.list().filter((p) => p.system);
-const pluginsMd = `# 系统插件参考
+const pluginsMd = `# 内置功能与系统插件参考
 
 > 本文件由 \`npm run docs:gen\` 自动生成，请勿手改。
 
-系统插件随程序发布，位于 \`src/system-plugins/\`，可在控制台「插件」页开关与配置；标注「默认关闭」的需手动开启。
+内置功能（\`src/features/\`）是程序本体的一部分，在控制台各自的页面里开关与设置，设置保存在主配置的 \`features.<名称>\` 下。
+系统插件（\`src/system-plugins/\`）是随程序发布的小插件，在「插件」页开关与配置。标注「默认关闭」的需手动开启。
 
 ${plugins.map((p) => {
   const st = host.plugins.get(p.name)!;
   const defOff = (host as any).defs.get(p.name)?.def.defaultEnabled === false;
   const cfg = Object.entries<any>(p.schema ?? {});
-  return `## ${p.displayName}（\`${p.name}\`）${defOff ? ' · 默认关闭' : ''}
+  return `## ${p.displayName}（\`${p.name}\`）${p.builtin ? ' · 内置功能' : ' · 插件'}${defOff ? ' · 默认关闭' : ''}
 
 ${p.description}
 ${p.depends.length ? `\n依赖：${p.depends.join('、')}\n` : ''}

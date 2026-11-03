@@ -96,6 +96,11 @@ export const ConfigSchema = z.object({
     /** agent 发送本地文件时允许读取的目录（空 = 不限制） */
     uploadRoots: z.array(z.string()).default([]),
   }).prefault({}),
+  /**
+   * 内置功能（仿真、记忆、表情包等）的设置，每个功能一节；enabled: false 表示关闭该功能。
+   * 只通过功能页面修改（PUT /api/features/:name/config），/api/config 不读写这一节。
+   */
+  features: z.record(z.string(), z.record(z.string(), z.unknown())).default({}),
   plugins: z.object({
     dir: z.string().default('plugins'),
     /** 显式开关（覆盖插件的 defaultEnabled） */

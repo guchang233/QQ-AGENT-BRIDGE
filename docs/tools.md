@@ -609,7 +609,7 @@ Agent 只会看到其 token 权限等级内、且未在控制台禁用的工具�
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `content` | string | 是 |  |
+| `content` | string | 是 | 一句完整的话，最多 1000 字 |
 | `scope` | string |  |  |
 | `subject` | string,number |  | 这条记忆主要关于谁（QQ 号） |
 | `kind` | `fact` \| `preference` \| `event` \| `relation` \| `task` \| `note` |  | fact 事实 / preference 偏好 / event 事件 / relation 关系 / task 待办 / note 笔记 默认 `"fact"` |

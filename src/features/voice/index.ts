@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { definePlugin, z } from '../../sdk.ts';
+import { definePlugin, z } from '../kit.ts';
 import type { StoredMessage } from '../../store/db.ts';
 
 /**

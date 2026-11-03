@@ -481,6 +481,7 @@ function maskConfig(c: Config) {
   if (x.onebot.httpToken) x.onebot.httpToken = MASK;
   if (x.server.consolePassword) x.server.consolePassword = MASK;
   x.server.sessionSecret = MASK;
+  delete (x as any).features; // 内置功能的设置在各自页面里改，含密钥
   return x;
 }
 function unmaskConfig(incoming: any, cur: Config) {
@@ -491,5 +492,6 @@ function unmaskConfig(incoming: any, cur: Config) {
   if (x.server.consolePassword === MASK) x.server.consolePassword = cur.server.consolePassword;
   x.server.sessionSecret = cur.server.sessionSecret;
   x.agents ??= {}; x.agents.tokens = cur.agents.tokens; // token 走单独接口
+  x.features = cur.features; // 内置功能的设置走 /api/plugins/:name/config
   return x;
 }

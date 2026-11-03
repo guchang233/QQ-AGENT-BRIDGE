@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { definePlugin, z, type ToolContent } from '../../sdk.ts';
+import { definePlugin, z, type ToolContent } from '../kit.ts';
 import type { StickerRow } from '../../store/db.ts';
 import { oneLine } from '../../bridge.ts';
 
