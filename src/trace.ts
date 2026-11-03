@@ -137,7 +137,21 @@ export class ReplyTracer extends EventEmitter {
 
   deliverFailed(conv: string, why: string, fix?: Step['fix']) {
     const t = this.running.get(conv);
-    if (t) this.step(t, 'deliver', 'blocked', why, fix);
+    if (!t) return;
+    // 一分钟内同一个会话、同样的原因又失败了：并进上一条，免得满屏都是同一个错误
+    const prev = this.list.find((x) => x !== t && x.conv === conv);
+    const ps = prev?.steps.find((x) => x.key === 'deliver');
+    if (prev?.endedAt && ps?.state === 'blocked' && ps.note === why && Date.now() - prev.endedAt < 60_000) {
+      this.running.delete(conv);
+      this.list.splice(this.list.indexOf(t), 1);
+      this.emit('trace', { ...t, removed: true });
+      prev.merged += t.merged;
+      prev.endedAt = Date.now();
+      if (t.sender) { prev.sender = t.sender; prev.text = t.text; }
+      this.emitTrace(prev);
+      return;
+    }
+    this.step(t, 'deliver', 'blocked', why, fix);
   }
 
   thinking(conv: string) {

@@ -8,7 +8,7 @@ import { api, onPush, fmtTime } from '../api';
  * 回复流程条：每次可能叫醒 AI 的事走一遍「收到 → 会话启用 → 唤醒 → 交给 AI → AI 处理 → 回复」，
  * 卡在哪一步就在那一步说明原因、给出去处。不用专门去做诊断。
  */
-const props = defineProps<{ running: any[]; offline: boolean; driverProblem: string }>();
+const props = withDefaults(defineProps<{ running: any[]; offline: boolean; driverProblem: string; limit?: number }>(), { limit: 4 });
 const router = useRouter();
 const msg = useMessage();
 const traces = ref<any[]>([]);
@@ -19,6 +19,7 @@ async function load() { try { traces.value = await api('/api/traces'); } catch {
 const off = onPush((t, d) => {
   if (t !== 'trace') return;
   const i = traces.value.findIndex((x) => x.id === d.id);
+  if (d.removed) { if (i >= 0) traces.value.splice(i, 1); return; } // 并进了上一条
   if (i >= 0) traces.value.splice(i, 1, d); else traces.value.unshift(d);
   traces.value.sort((a, b) => b.id - a.id);
   traces.value.length = Math.min(traces.value.length, 30);
@@ -29,7 +30,7 @@ onUnmounted(() => { off(); clearInterval(tick); });
 // 进行中的全显示；结束的只留最近几条
 const shown = computed(() => {
   const live = traces.value.filter((t) => !t.endedAt);
-  const done = traces.value.filter((t) => t.endedAt).slice(0, Math.max(0, 4 - live.length));
+  const done = traces.value.filter((t) => t.endedAt).slice(0, Math.max(0, props.limit - live.length));
   return [...live, ...done];
 });
 const runOf = (t: any) => props.running.find((r) => r.conv === t.conv);

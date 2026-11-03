@@ -5,7 +5,6 @@ import { NCard, NButton, NSpace, NAvatar, NTag, NAlert, useMessage } from 'naive
 import { api, state, onPush, avatarOf, fmtTime, fmtFull } from '../api';
 import { useBot } from '../bot';
 import ActivityList from '../components/ActivityList.vue';
-import ReplyFlow from '../components/ReplyFlow.vue';
 
 const msg = useMessage();
 const router = useRouter();
@@ -37,6 +36,17 @@ const offline = computed(() => pulse.value.state === 'offline');
 // AI 正在处理的会话（回复流程条里显示进度和「强制结束」）
 const agentRunning = computed<any[]>(() => s.value.agent?.running ?? []);
 const agentProblems = computed<any[]>(() => s.value.agent?.problems ?? []);
+// 最近一次回复流程的结果（详情在「回复流程」页）
+const lastFlow = ref<any>(null);
+const FLOW_TEXT: Record<string, string> = { replied: '已回复', silent: 'AI 看过了，没说话', stopped: '没叫醒 AI', blocked: '卡住了' };
+const blockedAt = (t: any) => { const s = t.steps.find((x: any) => x.state === 'blocked'); return s ? `${s.label}：${s.note}` : ''; };
+api('/api/traces').then((l: any[]) => { lastFlow.value = l[0] ?? null; }).catch(() => {});
+const offTrace = onPush((t, d) => {
+  if (t !== 'trace') return;
+  if (d.removed) { if (lastFlow.value?.id === d.id) api('/api/traces').then((l: any[]) => { lastFlow.value = l[0] ?? null; }).catch(() => {}); return; }
+  if (!lastFlow.value || d.id >= lastFlow.value.id) lastFlow.value = d;
+});
+onUnmounted(offTrace);
 </script>
 
 <template>
@@ -65,7 +75,14 @@ const agentProblems = computed<any[]>(() => s.value.agent?.problems ?? []);
       {{ p.detail }}
       <n-button size="tiny" style="margin-left: 8px" @click="router.push('/agent')">去处理</n-button>
     </n-alert>
-    <ReplyFlow :running="agentRunning" :offline="offline" :driver-problem="agentProblems.map((p) => `${p.label}：${p.detail}`).join('；')" />
+    <div v-if="agentRunning.length || lastFlow" class="flow-line" role="button" tabindex="0" @click="router.push('/flow')" @keydown.enter="router.push('/flow')">
+      <span class="dot" :class="agentRunning.length ? 'busy' : lastFlow?.outcome" />
+      <span class="min0 line">
+        <template v-if="agentRunning.length">AI 正在处理 {{ agentRunning.map((r) => r.convName || r.conv).join('、') }}</template>
+        <template v-else-if="lastFlow">最近一次：{{ lastFlow.convName }}　{{ FLOW_TEXT[lastFlow.outcome] ?? '进行中' }}<template v-if="lastFlow.outcome === 'blocked'">（{{ blockedAt(lastFlow) }}）</template></template>
+      </span>
+      <span class="hint">查看回复流程 ›</span>
+    </div>
 
     <div class="dash">
       <n-card title="最近动态" size="small">
@@ -144,4 +161,11 @@ const agentProblems = computed<any[]>(() => s.value.agent?.problems ?? []);
 .conv .hint { flex: none; }
 .conv .min0 .hint { display: block; }
 @media (max-width: 860px) { .dash { grid-template-columns: minmax(0, 1fr); } .scroll { max-height: 320px; } }
+.flow-line { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border: 1px solid rgba(128,128,128,.2); border-radius: 8px; font-size: 13px; cursor: pointer; }
+.flow-line:hover { border-color: rgba(18,183,245,.5); }
+.flow-line .line { flex: 1; }
+.flow-line .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #8a8f98; }
+.flow-line .dot.busy { background: #12b7f5; }
+.flow-line .dot.replied { background: #18a058; }
+.flow-line .dot.blocked { background: #d03050; }
 </style>

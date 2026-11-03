@@ -8,7 +8,7 @@ import {
 import {
   SpeedometerOutline, ChatbubblesOutline, PlanetOutline, HardwareChipOutline, ListOutline, ExtensionPuzzleOutline,
   TerminalOutline, DocumentTextOutline, SettingsOutline, MoonOutline, SunnyOutline, LogOutOutline, StatsChartOutline, PulseOutline,
-  PeopleOutline, BookOutline, HappyOutline, AppsOutline,
+  PeopleOutline, BookOutline, HappyOutline, AppsOutline, GitNetworkOutline,
 } from '@vicons/ionicons5';
 import { state, checkSession, api, isNarrow } from './api';
 import Login from './components/Login.vue';
@@ -41,6 +41,7 @@ const icon = (c: any) => () => h(NIcon, null, { default: () => h(c) });
 const menu = computed<MenuOption[]>(() => [
   { type: 'group', label: '概览', key: 'g0', children: [
     { label: '仪表盘', key: '/dashboard', icon: icon(SpeedometerOutline) },
+    { label: '回复流程', key: '/flow', icon: icon(GitNetworkOutline) },
     { label: '动态', key: '/activity', icon: icon(PulseOutline) },
   ] },
   { type: 'group', label: 'QQ', key: 'g1', children: [
