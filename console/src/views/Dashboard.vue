@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { NCard, NButton, NSpace, NAvatar, NTag, NAlert, NPopconfirm, useMessage } from 'naive-ui';
+import { NCard, NButton, NSpace, NAvatar, NTag, NAlert, useMessage } from 'naive-ui';
 import { api, state, onPush, avatarOf, fmtTime, fmtFull } from '../api';
 import { useBot } from '../bot';
 import ActivityList from '../components/ActivityList.vue';
+import ReplyFlow from '../components/ReplyFlow.vue';
 
 const msg = useMessage();
 const router = useRouter();
@@ -33,19 +34,9 @@ onUnmounted(() => { off(); clearTimeout(timer); });
 const uptime = computed(() => { const u = s.value.uptimeSec ?? 0; return u > 86400 ? `${Math.floor(u / 86400)} 天` : u > 3600 ? `${Math.floor(u / 3600)} 小时` : `${Math.floor(u / 60)} 分钟`; });
 const offline = computed(() => pulse.value.state === 'offline');
 
-// AI 正在处理什么、等了多久；卡住时可以强制结束
-const now = ref(Date.now());
-const tick = setInterval(() => (now.value = Date.now()), 1000);
-onUnmounted(() => clearInterval(tick));
+// AI 正在处理的会话（回复流程条里显示进度和「强制结束」）
 const agentRunning = computed<any[]>(() => s.value.agent?.running ?? []);
 const agentProblems = computed<any[]>(() => s.value.agent?.problems ?? []);
-const ago = (t: number) => { const sec = Math.max(0, Math.round((now.value - t) / 1000)); return sec >= 60 ? `${Math.floor(sec / 60)} 分 ${sec % 60} 秒` : `${sec} 秒`; };
-const stopping = ref('');
-async function forceEnd(r: any) {
-  stopping.value = r.conv;
-  try { await api(`/api/drivers/${r.driver}/cancel`, { body: { conv: r.conv } }); msg.success('已结束这一轮'); }
-  catch (e: any) { msg.error(e.message); } finally { stopping.value = ''; }
-}
 </script>
 
 <template>
@@ -74,19 +65,7 @@ async function forceEnd(r: any) {
       {{ p.detail }}
       <n-button size="tiny" style="margin-left: 8px" @click="router.push('/agent')">去处理</n-button>
     </n-alert>
-    <div v-if="agentRunning.length" class="running">
-      <div v-for="r in agentRunning" :key="r.driver + r.conv" class="run st-thinking">
-        <span class="bot-dot" />
-        <div class="min0">
-          <div class="line"><b>{{ r.convName || r.conv }}</b><span v-if="r.since" class="hint">　已处理 {{ ago(r.since) }}</span></div>
-          <div v-if="r.step" class="hint line">{{ r.step }}<template v-if="r.lastProgressAt && now - r.lastProgressAt > 30000">，已经 {{ ago(r.lastProgressAt) }} 没有进展</template></div>
-        </div>
-        <n-popconfirm @positive-click="forceEnd(r)">
-          <template #trigger><n-button size="tiny" :loading="stopping === r.conv">强制结束</n-button></template>
-          结束这个会话当前的 AI 回合？已经发出的消息不受影响，下一条新消息会重新唤醒。
-        </n-popconfirm>
-      </div>
-    </div>
+    <ReplyFlow :running="agentRunning" :offline="offline" :driver-problem="agentProblems.map((p) => `${p.label}：${p.detail}`).join('；')" />
 
     <div class="dash">
       <n-card title="最近动态" size="small">
@@ -152,9 +131,6 @@ async function forceEnd(r: any) {
 .mini span { font-size: 11px; opacity: .6; }
 .mini.bad b { color: #d03050; }
 .agent-alert { font-size: 13px; }
-.running { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(128,128,128,.2); }
-.run { display: flex; align-items: center; gap: 10px; font-size: 13px; --c: #8a63d2; }
-.run .hint { font-size: 12px; opacity: .7; }
 .dash { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 10px; align-items: start; }
 .side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .scroll { max-height: calc(100vh - 215px); overflow: auto; }

@@ -116,6 +116,7 @@ export async function callToolStateless(bridge: Bridge, caller: Caller, name: st
 /** 会话令牌没通过：告诉模型具体原因，并记一条日志方便排查（这类调用到不了执行层，不进审计） */
 function tokenRefused(bridge: Bridge, caller: Caller, tool: string, why: string): ToolResult {
   log.warn(`${caller.name} 调用 ${tool} 被拒：${why}`);
+  bridge.tracer.toolError(undefined, tool, why);
   return { content: [{ type: 'text', text: `错误：${why}。操作未执行。` }], isError: true };
 }
 

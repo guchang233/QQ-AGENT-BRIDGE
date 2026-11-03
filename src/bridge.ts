@@ -8,6 +8,7 @@ import { actionTier, getAction } from './onebot/catalog.ts';
 import { Store, type StoredMessage } from './store/db.ts';
 import { MediaService } from './media.ts';
 import { FaceTable } from './message/faces.ts';
+import { ReplyTracer } from './trace.ts';
 import { type ConvRef, type Segment, convKey, normalizeMessage, parseConv, plainText, text as textSeg } from './message/segments.ts';
 import { parseDsl } from './message/dsl.ts';
 import { renderSegments, fmtTime } from './message/render.ts';
@@ -60,9 +61,13 @@ export class Bridge extends EventEmitter {
   /** 自动更新（守护进程模式下挂载） */
   updater?: import('./update/index.ts').Updater;
 
+  /** 每次叫醒 AI 走了哪几步、卡在哪（仪表盘的回复流程条） */
+  tracer = new ReplyTracer((c) => this.convName(c));
+
   constructor(config?: Config) {
     super();
     this.setMaxListeners(100);
+    this.on('message', (m: StoredMessage) => { if (m.isSelf) this.tracer.selfSent(m.conv); });
     this.config = config ?? loadConfig().config;
     this.dataDir = resolveFromRoot(this.config.dataDir);
     this.store = new Store(this.dataDir);
@@ -388,6 +393,7 @@ export class Bridge extends EventEmitter {
     } catch (e: any) {
       const id = this.store.audit({ agent: caller.name, tool, tier, params, ok: false, result: e?.message ?? String(e), ms: Date.now() - t0 });
       if (tool === 'send') this.activity({ kind: 'error', level: 'error', conv: (params as any)?.conv, actor: caller.name, title: '发送失败', detail: e?.message ?? String(e) });
+      if (caller.kind === 'agent') this.tracer.toolError((params as any)?.conv, tool === 'send' ? '发消息' : tool, e?.message ?? String(e));
       this.emit('audit', { id, ts: Date.now(), agent: caller.name, kind: caller.kind, tool, tier, ok: false, ms: Date.now() - t0, params: short(params, 300), error: e?.message });
       throw e;
     }
@@ -414,7 +420,6 @@ export class Bridge extends EventEmitter {
   async send(caller: Caller, convIn: string | ConvRef, content: string | Segment[], opts: SendOptions = {}): Promise<SendResult> {
     const c = typeof convIn === 'string' ? parseConv(convIn) : convIn;
     const conv = convKey(c);
-    this.policy.assertConv(caller, c);
     let parts: (string | Segment[])[] = typeof content === 'string'
       ? (opts.burst ? content.split(/\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean) : [content])
       : [content];
@@ -427,6 +432,7 @@ export class Bridge extends EventEmitter {
     const total = parts.reduce((n, p) => n + (typeof p === 'string' ? p.length : plainText(p).length), 0);
     if (total > this.config.limits.maxMessageChars * parts.length) throw new Error(`消息过长（${total} 字），上限 ${this.config.limits.maxMessageChars} 字/条`);
     return this.invoke(caller, 'send', 'send', { conv, content, opts }, async () => {
+      this.policy.assertConv(caller, c); // 放在 invoke 里：会话没启用被拒时也留下审计记录
       this.policy.checkSendRate(caller, conv, parts.length);
       this.sendingConvs.set(conv, (this.sendingConvs.get(conv) ?? 0) + 1);
       this.refreshPulse();

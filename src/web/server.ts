@@ -287,6 +287,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
 
   // ------------------------------------------------------------------ 插件
   app.get('/api/plugins', async () => plugins.list());
+  app.get('/api/traces', async () => bridge.tracer.recent());
   app.post('/api/plugins/:name/:op', async (req, reply) => {
     const { name, op } = req.params as { name: string; op: string };
     if (op === 'enable') await plugins.setEnabled(name, true);
@@ -471,6 +472,7 @@ export async function startWeb(bridge: Bridge, plugins: PluginHost) {
   bridge.on('contacts', () => push('contacts', null));
   bridge.on('audit', (a) => push('audit', a));
   bridge.on('usage', (u) => push('usage', u));
+  bridge.tracer.on('trace', (t) => push('trace', t));
   bridge.on('activity', (a) => push('activity', { ...a, convName: a.conv ? bridge.convName(a.conv) : '' }));
   bridge.on('driver', (d) => push('driver', d));
   bridge.on('pulse', (p) => push('status', { pulse: p }));

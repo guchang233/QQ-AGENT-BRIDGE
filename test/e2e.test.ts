@@ -468,6 +468,59 @@ describe('系统插件', () => {
     }
   });
 
+  it('回复流程：每次叫醒 AI 记下走到哪一步，卡住的地方说明原因', async () => {
+    const host = bridge.pluginHost!;
+    let fail = '';
+    const driver: any = Object.assign(new EventEmitter(), {
+      id: 'dsh', kind: 'test', label: '测试驱动', wakes: [] as any[],
+      async start() {}, async stop() {}, isBusy: () => false, status: () => ({ id: 'dsh', kind: 'test', label: '测试驱动', state: 'ready', detail: '', busy: [], sessions: 0 }),
+      async wake(w: any) { if (fail) throw new Error(fail); this.wakes.push(w); setTimeout(() => driver.emit('turn-start', w.conv), 5); },
+    });
+    const before = bridge.drivers.get('dsh');
+    const saved = structuredClone(bridge.config.access);
+    bridge.registerDriver(driver);
+    const tr = bridge.tracer;
+    const latest = (conv: string) => tr.recent().find((x) => x.conv === conv)!;
+    const stepOf = (conv: string, k: string) => latest(conv)?.steps.find((x) => x.key === k)?.state;
+    try {
+      host.saveConfig('social', { ...host.plugins.get('social')!.config, batchWindowSec: 0, directWindowSec: 0, maxWakePerMinute: 50, maxWakePerHour: 500 });
+      await host.reload('social');
+      // 正常：收到 → 启用 → 唤醒 → 交给 AI → 处理 → 回复
+      mock.pushGroupMessage(111, 30003, [{ type: 'at', data: { qq: '10000' } }, { type: 'text', data: { text: ' 流程测试' } }]);
+      await waitFor(() => stepOf('group:111', 'think') === 'active', 8000).catch((e) => { throw new Error(`${e.message} ${JSON.stringify(tr.recent().slice(0, 3))}`); });
+      expect(latest('group:111').steps.map((x) => x.state).slice(0, 4)).toEqual(['done', 'done', 'done', 'done']);
+      driver.emit('turn-end', 'group:111', { reason: 'completed', text: '', tools: ['qq_reply'], durationMs: 1200 });
+      expect(latest('group:111')).toMatchObject({ outcome: 'replied' });
+      // AI 看了没说话：正常结束，不算卡住
+      mock.pushPrivateMessage(30004, [{ type: 'text', data: { text: '在吗' } }]);
+      await waitFor(() => stepOf('private:30004', 'think') === 'active', 8000);
+      driver.emit('turn-end', 'private:30004', { reason: 'completed', text: '', tools: ['qq_get_history'], durationMs: 800 });
+      expect(latest('private:30004')).toMatchObject({ outcome: 'silent' });
+      // 会话没启用：停在第二步，并给出去处
+      bridge.config.access.denyGroups = [...bridge.config.access.denyGroups, '222'];
+      mock.pushGroupMessage(222, 30003, [{ type: 'at', data: { qq: '10000' } }, { type: 'text', data: { text: ' 有人吗' } }]);
+      await waitFor(() => latest('group:222')?.outcome === 'blocked', 4000);
+      const scope = latest('group:222').steps.find((x) => x.key === 'scope')!;
+      expect(scope).toMatchObject({ state: 'blocked', fix: { to: '/features/social' } });
+      // 交给 AI 失败：停在第四步，写明错误
+      fail = 'DSH 没有运行';
+      mock.pushGroupMessage(111, 30003, [{ type: 'at', data: { qq: '10000' } }, { type: 'text', data: { text: ' 再试' } }]);
+      await waitFor(() => stepOf('group:111', 'deliver') === 'blocked', 8000);
+      expect(latest('group:111').steps.find((x) => x.key === 'deliver')!.note).toContain('DSH 没有运行');
+      // 控制台能读到
+      const base = `http://127.0.0.1:${PORT}`;
+      const login = await fetch(`${base}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'secret123' }) });
+      const list = await (await fetch(`${base}/api/traces`, { headers: { cookie: login.headers.get('set-cookie')!.split(';')[0] } })).json();
+      expect(list.length).toBeGreaterThan(2);
+    } finally {
+      fail = '';
+      bridge.config.access = saved;
+      host.saveConfig('social', { ...host.plugins.get('social')!.config, batchWindowSec: 8, directWindowSec: 2, maxWakePerMinute: 2, maxWakePerHour: 20 });
+      if (before) bridge.drivers.set('dsh', before); else bridge.drivers.delete('dsh');
+      await host.reload('social');
+    }
+  });
+
   it('语义检索：向量由后台补齐，换模型后重算，同义词能搜到', async () => {
     // 假的 OpenAI 兼容接口：含「辣」的文本向量相近
     const server = http.createServer((req, res) => {

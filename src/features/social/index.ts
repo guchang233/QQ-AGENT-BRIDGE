@@ -157,9 +157,20 @@ export default definePlugin({
     const recentSelfSends = (conv: string) => ctx.db.prepare('SELECT COUNT(*) n FROM messages WHERE conv = ? AND is_self = 1 AND ts > ?').get(conv, Date.now() - 3_600_000) as any;
 
     // ------------------------------------------------------------ 消息 → 唤醒判定
+    /** 回复流程条上显示的唤醒原因（REASON_LABEL 是写给 AI 看的长句） */
+    const WAKE_LABEL: Record<string, string> = {
+      private: '私聊', atMention: '被 @ 或回复', poke: '被戳', speaker: '关注的人说话', anyMessage: '活跃中，有新消息', question: '有人问问题',
+      nameMention: '叫到名字', keyword: '命中关键词', probability: '随手刷到', replyCheck: '回来看看有没有人接话', timeout: '沉睡结束',
+      proactive: '冷场，考虑主动开话题', manual: '手动唤醒', bootstrap: '启动', adminReply: '管理员答复了请示', bubble: '冒泡', bubbleEnd: '冒泡结束',
+    };
+    const tracer = bridge.tracer;
+    const isPoke = (m: StoredMessage) => m.segments.some((x) => x.type === 'poke');
+    /** 对着机器人的消息：@、回复、私聊、戳。这些没回应时一定要说清原因 */
+    const directed = (m: StoredMessage) => m.mentioned || isPoke(m) || m.conv.startsWith('private:');
     ctx.on('message', (m: StoredMessage) => {
       if (!enabled.has(m.conv)) {
-        if ((m.mentioned || m.conv.startsWith('private:')) && !ignoredHint.has(m.conv)) {
+        if (directed(m)) tracer.halt(m.conv, m.senderName, m.text, 'scope', 'blocked', `这个会话没启用（${bridge.config.access.mode === 'all' ? '全部启用模式下被单独关掉了' : '只启用勾选的模式下没勾选'}），AI 不会回复`, { label: '去打开', to: '/features/social' });
+        if (directed(m) && !ignoredHint.has(m.conv)) {
           ignoredHint.add(m.conv);
           bridge.activity({ kind: 'info', level: 'warn', conv: m.conv, actor: m.senderName, title: '收到 @ 或私聊，但这个会话没启用，AI 不会回复', detail: `在「回复与人格设置」里打开这个会话的开关（当前模式：${bridge.config.access.mode === 'all' ? '全部启用，这个会话被关掉了' : '只启用勾选的，这个会话没勾选'}）` });
         }
@@ -169,17 +180,32 @@ export default definePlugin({
       ctx.setTimeout(() => onIncoming(m), 400);
     });
     const onIncoming = (m: StoredMessage) => {
-      if (bridge.isConsumed(m.conv, m.msgId)) return;
+      if (bridge.isConsumed(m.conv, m.msgId)) {
+        if (directed(m)) tracer.halt(m.conv, m.senderName, m.text, 'wake', 'stop', '这条是指令，已经由指令处理，不叫醒 AI');
+        return;
+      }
       const s = stateOf(m.conv);
       s.lastIncomingAt = Date.now();
+      const wasSleeping = s.mode === 'sleeping' && s.sleepUntil > Date.now();
       const reason = evaluate(s, {
-        isPrivate: m.conv.startsWith('private:'), mentioned: m.mentioned && !m.segments.some((x) => x.type === 'poke'),
-        poke: m.segments.some((x) => x.type === 'poke'), text: m.text, senderId: m.senderId,
+        isPrivate: m.conv.startsWith('private:'), mentioned: m.mentioned && !isPoke(m),
+        poke: isPoke(m), text: m.text, senderId: m.senderId,
       }, selfNames(m.conv));
       if (reason) {
         const had = !!s.pending;
         schedule(s, reason, engineCfg());
         if (!had) bridge.activity({ kind: 'trigger', conv: m.conv, actor: m.senderName, title: `触发唤醒：${REASON_LABEL[reason] ?? reason}`, detail: `${Math.round((s.pending!.dueAt - Date.now()) / 100) / 10} 秒后唤醒（期间的新消息会合并）` });
+        const { trace, merged } = tracer.message(m.conv, m.senderName, m.text);
+        if (!merged) { tracer.step(trace, 'scope', 'done'); tracer.waitWake(trace, WAKE_LABEL[reason] ?? reason, s.pending!.dueAt - Date.now()); }
+      } else if (directed(m)) {
+        // 对着机器人说话却没叫醒：说清是哪个设置挡住的
+        const t = s.triggers;
+        const halt = (state: 'blocked' | 'stop', note: string, fix?: { label: string; to: string }) => tracer.halt(m.conv, m.senderName, m.text, 'wake', state, note, fix);
+        const fix = { label: '唤醒设置', to: '/features/social/config' };
+        if (isPoke(m) && !t.poke) halt('blocked', '「被戳时唤醒」关着', fix);
+        else if (m.mentioned && !t.atMention) halt('blocked', '「@我 / 回复我时唤醒」关着', fix);
+        else if (wasSleeping) halt('stop', `AI 选择了沉睡，到 ${new Date(s.sleepUntil).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })} 才会醒（可以在会话列表里点「唤醒一次」）`, { label: '会话列表', to: '/features/social' });
+        else halt('stop', '这条消息没有满足唤醒条件');
       }
       save(m.conv);
     };
@@ -188,6 +214,7 @@ export default definePlugin({
     const firing = new Set<string>();
     ctx.setInterval(async () => {
       const d = driver();
+      if (!d) tracer.failWaiting(`没有可用的 AI 驱动「${c.driver}」`, { label: 'AI 接入', to: '/agent' });
       if (!d || !bridge.running) return;
       const ec = engineCfg();
       for (const conv of enabled.list()) {
@@ -200,11 +227,14 @@ export default definePlugin({
           const why = r.hourFull ? `近一小时已唤醒 ${ec.maxWakePerHour} 次（上限）` : `一分钟内已唤醒 ${ec.maxWakePerMinute} 次（上限）`;
           ctx.logger.info(`${conv} 唤醒被限流：${why}，${at} 恢复`);
           bridge.activity({ kind: 'error', level: 'warn', conv, actor: '仿真', title: `唤醒限流：${why}`, detail: `${at} 后恢复（期间的触发会合并成一次）。可在仿真设置里调高「每会话每小时最多唤醒次数」；「唤醒一次」按钮不受限制。` });
+          tracer.limited(conv, `唤醒限流：${why}，${at} 恢复（期间的触发合并成一次）`);
         }
         if (!reason) continue;
         save(conv);
         firing.add(conv);
+        if (reason !== 'memoryDigest') tracer.deliver(conv, WAKE_LABEL[reason] ?? reason);
         fire(conv, reason).catch((e) => {
+          tracer.deliverFailed(conv, `交给 AI 失败：${e.message}（1 分钟后重试）`, { label: 'AI 接入', to: '/agent' });
           stopTyping(conv);
           ctx.logger.warn(`唤醒 ${conv} 失败：${e.message}`);
           // 模型不可用时驱动已经提示过一次，不每分钟重复刷屏
@@ -366,7 +396,7 @@ export default definePlugin({
       const onEnd = async (conv: string, r: TurnResult) => {
         stopTyping(conv);
         if (digesting.delete(conv)) { bridge.setQuiet(conv, 0); return; } // 提炼回合不计入聊天节奏
-        if (!enabled.has(conv)) return;
+        if (!enabled.has(conv)) { tracer.turnEnd(conv, r); return; }
         const s = stateOf(conv);
         const { sent, reset } = onTurnEnd(s, engineCfg(), r.tools);
         if (reset) ctx.logger.info(`${conv} 连续 ${c.noActionLimit} 轮无动作，已恢复默认唤醒配置`);
@@ -374,10 +404,13 @@ export default definePlugin({
           await ctx.qq.send(conv, toPlain(r.text)).catch((e) => ctx.logger.warn(`转发文字回复失败：${e.message}`));
           s.lastAiSendAt = Date.now();
         }
+        tracer.turnEnd(conv, r);
         save(conv);
       };
+      const onStart = (conv: string) => { if (!digesting.has(conv)) tracer.thinking(conv); };
       d.on('turn-end', onEnd);
-      ctx.onUnload(() => { d.off('turn-end', onEnd); (d as any).__socialAttached = false; });
+      d.on('turn-start', onStart);
+      ctx.onUnload(() => { d.off('turn-end', onEnd); d.off('turn-start', onStart); (d as any).__socialAttached = false; });
     };
     attach(driver());
     ctx.setInterval(() => attach(driver()), 5000);

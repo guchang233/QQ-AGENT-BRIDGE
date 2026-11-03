@@ -17,6 +17,7 @@ const { PluginHost } = await import('../src/plugins/host.ts');
 const { startWeb } = await import('../src/web/server.ts');
 
 const mock = new MockOneBot({ wsPort: 13101, httpPort: 13100, token: 'mock' });
+(mock as any).msgSeq = Math.floor(Date.now() / 1000); // 演示数据目录会保留，消息 ID 不能每次从 1 开始，否则新消息被当成重复丢掉
 await mock.start();
 
 const config = ConfigSchema.parse({
